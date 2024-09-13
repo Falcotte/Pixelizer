@@ -27,9 +27,14 @@ namespace AngryKoala.Pixelization
                 colorizer.Colorize();
             }
 
-            if(GUILayout.Button("Extract Color Palette"))
+            if(GUILayout.Button("Create New Color Palette"))
             {
-                colorizer.ExtractColorPalette();
+                colorizer.CreateNewColorPalette();
+            }
+            
+            if(GUILayout.Button("Add To Color Palette"))
+            {
+                colorizer.AddToColorPalette();
             }
 
             if(GUILayout.Button("Save Color Palette"))

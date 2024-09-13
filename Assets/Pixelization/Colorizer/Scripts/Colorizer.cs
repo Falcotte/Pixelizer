@@ -290,7 +290,7 @@ namespace AngryKoala.Pixelization
             return centroids.ToList();
         }
 
-        public void ExtractColorPalette()
+        public void CreateNewColorPalette()
         {
 #if UNITY_EDITOR
             if(colorPaletteColorCount <= 0)
@@ -309,6 +309,16 @@ namespace AngryKoala.Pixelization
             }
             colorPalette = newColorPalette;
 #endif
+        }
+        
+        public void AddToColorPalette()
+        {
+            List<Color> centroids = GetColorPalette(colorPaletteColorCount);
+            
+            foreach(var centroid in centroids)
+            {
+                colorPalette.Colors.Add(centroid);
+            }
         }
 
         public void SaveColorPalette()
