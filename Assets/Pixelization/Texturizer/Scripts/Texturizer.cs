@@ -21,6 +21,8 @@ namespace AngryKoala.Pixelization
         [SerializeField][ShowIf("texturizationStyle", TexturizationStyle.CustomSize)] private int width;
         [SerializeField][ShowIf("texturizationStyle", TexturizationStyle.CustomSize)] private int height;
 
+        [SerializeField] private string textureSavePath;
+
         public void Texturize(bool saveTexture = false)
         {
             if(pixelizer.PixCollection.Length == 0)
@@ -95,13 +97,14 @@ namespace AngryKoala.Pixelization
 #if UNITY_EDITOR
             if(saveTexture)
             {
-                if(!AssetDatabase.IsValidFolder("Assets/Pixelization/Texturizer/Textures"))
+                if (!AssetDatabase.IsValidFolder(textureSavePath))
                 {
-                    AssetDatabase.CreateFolder("Assets/Pixelization/Texturizer", "Textures");
+                    Debug.LogWarning("Save path is not valid");
+                    return;
                 }
 
-                string path = AssetDatabase.GenerateUniqueAssetPath("Assets/Pixelization/Texturizer/Textures/Texture.png");
-
+                string path = AssetDatabase.GenerateUniqueAssetPath($"{textureSavePath}/Texture.png");
+                
                 byte[] bytes = newTexture.EncodeToPNG();
                 File.WriteAllBytes(path, bytes);
 
