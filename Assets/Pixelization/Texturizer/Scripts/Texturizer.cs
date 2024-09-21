@@ -13,41 +13,51 @@ namespace AngryKoala.Pixelization
 
         private Texture2D newTexture;
 
-        private enum TexturizationStyle { PixSize, CustomSize }
+        private enum TexturizationStyle
+        {
+            PixSize,
+            CustomSize
+        }
+
         [SerializeField] private TexturizationStyle texturizationStyle;
 
-        [SerializeField][ShowIf("texturizationStyle", TexturizationStyle.PixSize)] private int pixSize;
+        [SerializeField] [ShowIf("texturizationStyle", TexturizationStyle.PixSize)]
+        private int pixSize;
 
-        [SerializeField][ShowIf("texturizationStyle", TexturizationStyle.CustomSize)] private int width;
-        [SerializeField][ShowIf("texturizationStyle", TexturizationStyle.CustomSize)] private int height;
+        [SerializeField] [ShowIf("texturizationStyle", TexturizationStyle.CustomSize)]
+        private int width;
+
+        [SerializeField] [ShowIf("texturizationStyle", TexturizationStyle.CustomSize)]
+        private int height;
 
         [SerializeField] private string textureSavePath;
 
-        public void Texturize(bool saveTexture = false)
+        public void Texturize(bool saveTexture = false, string customSavePath = "")
         {
-            if(pixelizer.PixCollection.Length == 0)
+            if (pixelizer.PixCollection.Length == 0)
             {
                 return;
             }
 
-            if(newTexture != null && !saveTexture)
+            if (newTexture != null && !saveTexture)
             {
                 DestroyImmediate(newTexture);
             }
 
-            if(texturizationStyle == TexturizationStyle.PixSize)
+            if (texturizationStyle == TexturizationStyle.PixSize)
             {
-                newTexture = new Texture2D(pixelizer.CurrentWidth * pixSize, pixelizer.CurrentHeight * pixSize, TextureFormat.RGB24, false);
+                newTexture = new Texture2D(pixelizer.CurrentWidth * pixSize, pixelizer.CurrentHeight * pixSize,
+                    TextureFormat.RGB24, false);
 
                 int pixIndex = 0;
 
-                for(int i = 0; i < pixelizer.CurrentWidth; i++)
+                for (int i = 0; i < pixelizer.CurrentWidth; i++)
                 {
-                    for(int j = 0; j < pixelizer.CurrentHeight; j++)
+                    for (int j = 0; j < pixelizer.CurrentHeight; j++)
                     {
                         Color[] pixColor = new Color[pixSize * pixSize];
 
-                        for(int k = 0; k < pixColor.Length; k++)
+                        for (int k = 0; k < pixColor.Length; k++)
                         {
                             pixColor[k] = pixelizer.PixCollection[pixIndex].Color;
                         }
@@ -57,19 +67,20 @@ namespace AngryKoala.Pixelization
                     }
                 }
             }
-            if(texturizationStyle == TexturizationStyle.CustomSize)
+
+            if (texturizationStyle == TexturizationStyle.CustomSize)
             {
                 newTexture = new Texture2D(pixelizer.CurrentWidth, pixelizer.CurrentHeight, TextureFormat.RGB24, false);
 
                 int pixIndex = 0;
 
-                for(int i = 0; i < pixelizer.CurrentWidth; i++)
+                for (int i = 0; i < pixelizer.CurrentWidth; i++)
                 {
-                    for(int j = 0; j < pixelizer.CurrentHeight; j++)
+                    for (int j = 0; j < pixelizer.CurrentHeight; j++)
                     {
                         Color[] pixColor = new Color[1];
 
-                        for(int k = 0; k < pixColor.Length; k++)
+                        for (int k = 0; k < pixColor.Length; k++)
                         {
                             pixColor[k] = pixelizer.PixCollection[pixIndex].Color;
                         }
@@ -82,9 +93,9 @@ namespace AngryKoala.Pixelization
                 Texture2D scaledTexture = new Texture2D(width, height, TextureFormat.RGB24, false);
                 newTexture.wrapMode = TextureWrapMode.Clamp;
 
-                for(int i = 0; i < width; i++)
+                for (int i = 0; i < width; i++)
                 {
-                    for(int j = 0; j < height; j++)
+                    for (int j = 0; j < height; j++)
                     {
                         Color color = newTexture.GetPixelBilinear((float)i / width, (float)j / height);
                         scaledTexture.SetPixel(i, j, color);
@@ -95,16 +106,18 @@ namespace AngryKoala.Pixelization
             }
 
 #if UNITY_EDITOR
-            if(saveTexture)
+            if (saveTexture)
             {
-                if (!AssetDatabase.IsValidFolder(textureSavePath))
-                {
-                    Debug.LogWarning("Save path is not valid");
-                    return;
-                }
+                textureSavePath = string.IsNullOrEmpty(customSavePath) ? textureSavePath : customSavePath;
 
-                string path = AssetDatabase.GenerateUniqueAssetPath($"{textureSavePath}/Texture.png");
-                
+                // if (!AssetDatabase.IsValidFolder(textureSavePath))
+                // {
+                //     Debug.LogWarning("Save path is not valid");
+                //     return;
+                // }
+
+                string path = AssetDatabase.GenerateUniqueAssetPath($"{textureSavePath}");
+
                 byte[] bytes = newTexture.EncodeToPNG();
                 File.WriteAllBytes(path, bytes);
 
@@ -125,7 +138,7 @@ namespace AngryKoala.Pixelization
                 importer.SaveAndReimport();
             }
 #endif
-            if(!saveTexture)
+            if (!saveTexture)
             {
                 newTexture.filterMode = FilterMode.Point;
                 newTexture.Apply();
