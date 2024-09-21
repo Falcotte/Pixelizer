@@ -5,47 +5,72 @@ using UnityEngine.Events;
 
 namespace AngryKoala.Pixelization
 {
-    public enum PerformanceMode { Level1, Level2 }
+    public enum PerformanceMode
+    {
+        Level1,
+        Level2
+    }
 
     public class Pixelizer : MonoBehaviour
     {
+        [SerializeField] private Colorizer colorizer;
+        public Colorizer Colorizer => colorizer;
         [SerializeField] private Texturizer texturizer;
         public Texturizer Texturizer => texturizer;
 
-        [SerializeField][OnValueChanged("PreserveRatio")] private Texture2D texture;
-        public Texture2D Texture => texture;
+        [SerializeField] [OnValueChanged("PreserveRatio")]
+        private Texture2D texture;
+
+        public Texture2D Texture
+        {
+            get => texture;
+            set => texture = value;
+        }
 
         [HideInInspector] public Texture2D TexturizedTexture;
 
         private bool showOriginalDimensions => texture != null;
 
-        [SerializeField][ReadOnly][ShowIf("showOriginalDimensions")] private int originalWidth;
-        [SerializeField][ReadOnly][ShowIf("showOriginalDimensions")] private int originalHeight;
+        [SerializeField] [ReadOnly] [ShowIf("showOriginalDimensions")]
+        private int originalWidth;
 
-        [SerializeField][OnValueChanged("OnWidthChanged")] private int width;
+        [SerializeField] [ReadOnly] [ShowIf("showOriginalDimensions")]
+        private int originalHeight;
 
-        [SerializeField][HideInInspector] private int currentWidth;
+        [SerializeField] [OnValueChanged("OnWidthChanged")]
+        private int width;
+
+        [SerializeField] [HideInInspector] private int currentWidth;
         public int CurrentWidth => currentWidth;
-        [SerializeField][OnValueChanged("OnHeightChanged")] private int height;
 
-        [SerializeField][HideInInspector] private int currentHeight;
+        [SerializeField] [OnValueChanged("OnHeightChanged")]
+        private int height;
+
+        [SerializeField] [HideInInspector] private int currentHeight;
         public int CurrentHeight => currentHeight;
-        
+
 
         [Tooltip("Try to match the width/height ratio of the grid to the texture.")]
-        [SerializeField][OnValueChanged("PreserveRatio")] private bool preserveRatio;
+        [SerializeField]
+        [OnValueChanged("PreserveRatio")]
+        private bool preserveRatio;
 
         [SerializeField] private float pixSize;
 
         [SerializeField] private Pix pixPrefab;
-        [SerializeField][HideInInspector] private Pix performantPix;
+        [SerializeField] [HideInInspector] private Pix performantPix;
 
-        [Tooltip("Performance Mode Level 1 uses mesh UVs instead of material instances to display texturized image. Greatly reduces draw calls." +
+        [Tooltip(
+            "Performance Mode Level 1 uses mesh UVs instead of material instances to display texturized image. Greatly reduces draw calls." +
             "Performance Mode Level 2 uses a single mesh to display texturized image. Greatly reduces tris count.")]
-        [SerializeField] private bool usePerformanceMode;
+        [SerializeField]
+        private bool usePerformanceMode;
+
         public bool UsePerformanceMode => usePerformanceMode;
 
-        [SerializeField][ShowIf("usePerformanceMode")] private PerformanceMode performanceMode;
+        [SerializeField] [ShowIf("usePerformanceMode")]
+        private PerformanceMode performanceMode;
+
         public PerformanceMode PerformanceMode => performanceMode;
 
 #if UNITY_EDITOR
@@ -84,10 +109,10 @@ namespace AngryKoala.Pixelization
 
         public void Pixelize()
         {
-            if(width * height == 0)
+            if (width * height == 0)
                 return;
 
-            if(texture == null)
+            if (texture == null)
             {
                 Debug.LogWarning("No texture found to pixelize");
                 return;
@@ -98,14 +123,14 @@ namespace AngryKoala.Pixelization
             SetPixColors();
 
 #if UNITY_EDITOR
-            if(UnityEditor.EditorApplication.isPlaying)
+            if (UnityEditor.EditorApplication.isPlaying)
             {
-                foreach(var pix in pixCollection)
+                foreach (var pix in pixCollection)
                 {
                     pix.SetMaterial();
                 }
 
-                if(usePerformanceMode)
+                if (usePerformanceMode)
                 {
                     texturizer.Texturize();
                     SetPixTextures();
@@ -126,9 +151,9 @@ namespace AngryKoala.Pixelization
             pixCollection = new Pix[width * height];
             int pixIndex = 0;
 
-            for(int i = 0; i < width; i++)
+            for (int i = 0; i < width; i++)
             {
-                for(int j = 0; j < height; j++)
+                for (int j = 0; j < height; j++)
                 {
                     Pix pix = Instantiate(pixPrefab, transform);
 
@@ -136,7 +161,8 @@ namespace AngryKoala.Pixelization
                     pix.Position = new Vector2Int(i, j);
 
                     pix.gameObject.name = $"Pix[{i},{j}]";
-                    pix.transform.localPosition = new Vector3(-width * pixSize / 2f + pixSize / 2f + i * pixSize, 0f, -height * pixSize / 2f + pixSize / 2f + j * pixSize);
+                    pix.transform.localPosition = new Vector3(-width * pixSize / 2f + pixSize / 2f + i * pixSize, 0f,
+                        -height * pixSize / 2f + pixSize / 2f + j * pixSize);
                     pix.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
                     pix.transform.localScale = new Vector3(pixSize, pixSize, 1f);
 
@@ -165,9 +191,11 @@ namespace AngryKoala.Pixelization
             float textureAreaX = (float)texture.width / width;
             float textureAreaY = (float)texture.height / height;
 
-            for(int i = 0; i < width * height; i++)
+            for (int i = 0; i < width * height; i++)
             {
-                Color color = GetAverageColor(texture.GetPixels(Mathf.FloorToInt((i / height) * textureAreaX), Mathf.FloorToInt(i % height * textureAreaY), Mathf.FloorToInt(textureAreaX), Mathf.FloorToInt(textureAreaY)));
+                Color color = GetAverageColor(texture.GetPixels(Mathf.FloorToInt((i / height) * textureAreaX),
+                    Mathf.FloorToInt(i % height * textureAreaY), Mathf.FloorToInt(textureAreaX),
+                    Mathf.FloorToInt(textureAreaY)));
 
                 pixCollection[i].OriginalColor = color;
                 pixCollection[i].SetColor(color);
@@ -180,7 +208,7 @@ namespace AngryKoala.Pixelization
             float g = 0f;
             float b = 0f;
 
-            for(int i = 0; i < colors.Length; i++)
+            for (int i = 0; i < colors.Length; i++)
             {
                 r += colors[i].r;
                 g += colors[i].g;
@@ -196,9 +224,9 @@ namespace AngryKoala.Pixelization
 
         public void Clear()
         {
-            if(pixCollection != null)
+            if (pixCollection != null)
             {
-                for(int i = 0; i < pixCollection.Length; i++)
+                for (int i = 0; i < pixCollection.Length; i++)
                 {
                     DestroyImmediate(pixCollection[i].gameObject);
                 }
@@ -206,7 +234,7 @@ namespace AngryKoala.Pixelization
 
             pixCollection = null;
 
-            if(performantPix != null)
+            if (performantPix != null)
             {
                 DestroyImmediate(performantPix.gameObject);
             }
@@ -214,12 +242,12 @@ namespace AngryKoala.Pixelization
 
         private void SetPixTextures()
         {
-            if(!usePerformanceMode)
+            if (!usePerformanceMode)
                 return;
 
-            if(performanceMode == PerformanceMode.Level1)
+            if (performanceMode == PerformanceMode.Level1)
             {
-                for(int i = 0; i < pixCollection.Length; i++)
+                for (int i = 0; i < pixCollection.Length; i++)
                 {
                     pixCollection[i].MeshRenderer.sharedMaterial.SetTexture("_MainTex", TexturizedTexture);
                 }
@@ -232,18 +260,24 @@ namespace AngryKoala.Pixelization
 
         private void SetPixTextures(Texture2D texture)
         {
-            if(!usePerformanceMode)
+            if (!usePerformanceMode)
                 return;
 
-            if(performanceMode == PerformanceMode.Level1)
+            if (performanceMode == PerformanceMode.Level1)
             {
-                for(int i = 0; i < pixCollection.Length; i++)
+                if (pixCollection == null)
+                    return;
+                
+                for (int i = 0; i < pixCollection.Length; i++)
                 {
                     pixCollection[i].MeshRenderer.sharedMaterial.SetTexture("_MainTex", texture);
                 }
             }
             else
             {
+                if (performantPix == null)
+                    return;
+                
                 performantPix.MeshRenderer.sharedMaterial.SetTexture("_MainTex", texture);
             }
         }
@@ -262,12 +296,12 @@ namespace AngryKoala.Pixelization
         {
             width = Mathf.Max(width, 1);
 
-            if(texture == null)
+            if (texture == null)
             {
                 return;
             }
 
-            if(preserveRatio)
+            if (preserveRatio)
             {
                 float ratio = (float)texture.width / texture.height;
 
@@ -280,12 +314,12 @@ namespace AngryKoala.Pixelization
         {
             height = Mathf.Max(height, 1);
 
-            if(texture == null)
+            if (texture == null)
             {
                 return;
             }
 
-            if(preserveRatio)
+            if (preserveRatio)
             {
                 float ratio = (float)texture.width / texture.height;
 
@@ -296,7 +330,7 @@ namespace AngryKoala.Pixelization
 
         private void PreserveRatio()
         {
-            if(width >= height)
+            if (width >= height)
             {
                 OnWidthChanged();
             }
