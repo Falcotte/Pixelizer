@@ -25,6 +25,8 @@ namespace AngryKoala.Pixelization
 
         [SerializeField] private int frameRate;
 
+        [SerializeField] private bool pixelizeFrames;
+
         [SerializeField] private string frameSavePath;
 
         private Texture2D[] textures;
@@ -117,6 +119,16 @@ namespace AngryKoala.Pixelization
                 AssetDatabase.GenerateUniqueAssetPath(
                     $"{frameSavePath}/Frame_{currentFrame}.png");
 
+            if (pixelizeFrames)
+            {
+                pixelizer.Texture = texture;
+                
+                pixelizer.Pixelize();
+                pixelizer.Colorizer.Colorize();
+                pixelizer.Texturizer.Texturize(true, path);
+            }
+            else
+            {
                 byte[] bytes = texture.EncodeToPNG();
                 File.WriteAllBytes(path, bytes);
 
@@ -135,6 +147,7 @@ namespace AngryKoala.Pixelization
 
                 EditorUtility.SetDirty(importer);
                 importer.SaveAndReimport();
+            }
         }
 
         private void SeekCompleted(VideoPlayer videoPlayer)
