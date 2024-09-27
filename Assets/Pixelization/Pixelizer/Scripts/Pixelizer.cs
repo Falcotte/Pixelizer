@@ -13,6 +13,8 @@ namespace AngryKoala.Pixelization
 
     public class Pixelizer : MonoBehaviour
     {
+        [SerializeField] private PixPool pixPool;
+
         [SerializeField] private Colorizer colorizer;
         public Colorizer Colorizer => colorizer;
         [SerializeField] private Texturizer texturizer;
@@ -77,6 +79,8 @@ namespace AngryKoala.Pixelization
         private bool usePerformanceModeEnabled => !EditorApplication.isPlaying;
 #endif
 
+        [SerializeField] private bool usePixPool;
+
         [SerializeField] private Pix[] pixCollection;
         public Pix[] PixCollection => pixCollection;
 
@@ -117,7 +121,7 @@ namespace AngryKoala.Pixelization
                 Debug.LogWarning("No texture found to pixelize");
                 return;
             }
-
+            
             CreateGrid();
 
             SetPixColors();
@@ -137,7 +141,7 @@ namespace AngryKoala.Pixelization
                 }
             }
 #endif
-
+            
             OnGridSizeUpdated?.Invoke(currentWidth * pixSize, currentHeight * pixSize);
         }
 
@@ -155,7 +159,16 @@ namespace AngryKoala.Pixelization
             {
                 for (int j = 0; j < height; j++)
                 {
-                    Pix pix = Instantiate(pixPrefab, transform);
+                    Pix pix = default;
+
+                    if (usePixPool)
+                    {
+                        pix = pixPool.GetPooledObject(transform);
+                    }
+                    else
+                    {
+                        pix = Instantiate(pixPrefab, transform);
+                    }
 
                     pix.Pixelizer = this;
                     pix.Position = new Vector2Int(i, j);
@@ -173,7 +186,14 @@ namespace AngryKoala.Pixelization
                 }
             }
 
-            performantPix = Instantiate(pixPrefab, transform);
+            if (usePixPool)
+            {
+                performantPix = pixPool.GetPooledObject(transform);
+            }
+            else
+            {
+                performantPix = Instantiate(pixPrefab, transform);
+            }
 
             performantPix.Pixelizer = this;
             performantPix.Position = Vector2Int.zero;
@@ -228,7 +248,14 @@ namespace AngryKoala.Pixelization
             {
                 for (int i = 0; i < pixCollection.Length; i++)
                 {
-                    DestroyImmediate(pixCollection[i].gameObject);
+                    if (usePixPool)
+                    {
+                        pixPool.ReturnToPool(pixCollection[i]);
+                    }
+                    else
+                    {
+                        DestroyImmediate(pixCollection[i].gameObject);
+                    }
                 }
             }
 
@@ -236,7 +263,14 @@ namespace AngryKoala.Pixelization
 
             if (performantPix != null)
             {
-                DestroyImmediate(performantPix.gameObject);
+                if (usePixPool)
+                {
+                    pixPool.ReturnToPool(performantPix);
+                }
+                else
+                {
+                    DestroyImmediate(performantPix.gameObject);
+                }
             }
         }
 
@@ -267,7 +301,7 @@ namespace AngryKoala.Pixelization
             {
                 if (pixCollection == null)
                     return;
-                
+
                 for (int i = 0; i < pixCollection.Length; i++)
                 {
                     pixCollection[i].MeshRenderer.sharedMaterial.SetTexture("_MainTex", texture);
@@ -277,7 +311,7 @@ namespace AngryKoala.Pixelization
             {
                 if (performantPix == null)
                     return;
-                
+
                 performantPix.MeshRenderer.sharedMaterial.SetTexture("_MainTex", texture);
             }
         }

@@ -1,9 +1,10 @@
+using AngryKoala.ObjectPool;
 using NaughtyAttributes;
 using UnityEngine;
 
 namespace AngryKoala.Pixelization
 {
-    public class Pix : MonoBehaviour
+    public class Pix : MonoBehaviour, IPoolable
     {
         [HideInInspector] public Pixelizer Pixelizer;
 
@@ -29,6 +30,16 @@ namespace AngryKoala.Pixelization
 
         [SerializeField][OnValueChanged("OnHSVChanged")][Range(0f, 1f)] private float value;
 
+        public void Initialize()
+        {
+
+        }
+
+        public void Terminate()
+        {
+
+        }
+        
         public void SetColor(Color color)
         {
             this.color = color;
@@ -138,5 +149,6 @@ namespace AngryKoala.Pixelization
         }
 
         #endregion
+        
     }
 }
