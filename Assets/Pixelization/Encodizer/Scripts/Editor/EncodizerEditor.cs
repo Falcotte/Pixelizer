@@ -19,7 +19,21 @@ namespace AngryKoala.Pixelization
             if (GUILayout.Button("Encodize"))
             {
                 encodizer.Encodize();
+
+                encodizer.OnProgressUpdate = UpdateProgressBar;
+                encodizer.OnComplete = ClearProgressBar;
             }
+        }
+
+        private void UpdateProgressBar()
+        {
+            EditorUtility.DisplayProgressBar("Encoding", $"Frame {encodizer.CurrentFrame}/{encodizer.FrameCount}",
+                encodizer.Progress);
+        }
+
+        private void ClearProgressBar()
+        {
+            EditorUtility.ClearProgressBar();
         }
     }
 }

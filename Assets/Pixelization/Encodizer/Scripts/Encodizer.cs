@@ -3,10 +3,10 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-// using Unity.Collections;
 using UnityEditor;
 using UnityEditor.Media;
 using UnityEngine;
+using UnityEngine.Events;
 
 namespace AngryKoala.Pixelization
 {
@@ -19,8 +19,20 @@ namespace AngryKoala.Pixelization
 
         private List<Texture2D> frames = new();
 
+        public int FrameCount { get; private set; }
+        public int CurrentFrame { get; private set; }
+
+        public float Progress { get; private set; }
+
+        public UnityAction OnProgressUpdate;
+        public UnityAction OnComplete;
+
         public void Encodize()
         {
+            Progress = 0f;
+
+            CurrentFrame = 0;
+
             SetFrames();
 
             StartCoroutine(RecordMovie());
@@ -31,21 +43,25 @@ namespace AngryKoala.Pixelization
             frames.Clear();
 
             DirectoryInfo info = new DirectoryInfo(framesPath);
-            FileInfo[] files = info.GetFiles("*.png", SearchOption.TopDirectoryOnly).OrderBy(p => p.CreationTime)
+            FileInfo[] files = info.GetFiles("*.png", SearchOption.TopDirectoryOnly).OrderBy(p =>
+                    int.Parse(p.Name.Substring(p.Name.IndexOf('_') + 1,
+                        p.Name.Length - (p.Name.IndexOf('_') + 1) - 4)))
                 .ToArray();
 
             foreach (var file in files)
             {
-                string path = file.FullName.Replace('\\', '/');
-
-                if (path.StartsWith(Application.dataPath))
-                {
-                    path = "Assets" + path.Substring(Application.dataPath.Length);
-                }
-
-                Texture2D frame = (Texture2D)AssetDatabase.LoadAssetAtPath(path, typeof(Texture2D));
-                frames.Add(frame);
+                 string path = file.FullName.Replace('\\', '/');
+                
+                 if (path.StartsWith(Application.dataPath))
+                 {
+                     path = "Assets" + path.Substring(Application.dataPath.Length);
+                 }
+                
+                 Texture2D frame = (Texture2D)AssetDatabase.LoadAssetAtPath(path, typeof(Texture2D));
+                 frames.Add(frame);
             }
+
+            FrameCount = frames.Count;
         }
 
         private IEnumerator RecordMovie()
@@ -59,45 +75,28 @@ namespace AngryKoala.Pixelization
                 bitRateMode = VideoBitrateMode.High
             };
 
-            var audioAttr = new AudioTrackAttributes
-            {
-                sampleRate = new MediaRational(48000),
-                channelCount = 2
-                // language = "en"
-            };
-
-            int sampleFramesPerVideoFrame = audioAttr.channelCount *
-                audioAttr.sampleRate.numerator / videoAttr.frameRate.numerator;
-
             string path =
                 AssetDatabase.GenerateUniqueAssetPath(
                     $"{videoSavePath}/{videoName}.mp4");
 
-            var encoder = new MediaEncoder(path, videoAttr, audioAttr);
-            // var audioBuffer = new NativeArray<float>(sampleFramesPerVideoFrame, Allocator.Persistent);
+            var encoder = new MediaEncoder(path, videoAttr);
 
             for (int i = 0; i < frames.Count; i++)
             {
-                Texture2D frame = new Texture2D((int)videoAttr.width, (int)videoAttr.height, TextureFormat.RGBA32,
-                    false);
-                Color[] colors = frames[i].GetPixels();
+                encoder.AddFrame(frames[i]);
 
-                frame.SetPixels(colors);
-                frame.Apply(false);
+                CurrentFrame = i;
+                Progress = (float)i / frames.Count;
 
-                encoder.AddFrame(frame);
-
-                // encoder.AddSamples(audioBuffer);
+                OnProgressUpdate?.Invoke();
 
                 yield return null;
             }
-
-            if (encoder != null)
-                ((IDisposable)encoder).Dispose();
-
-            // if (audioBuffer != null)
-            //     ((IDisposable)audioBuffer).Dispose();
             
+            ((IDisposable)encoder).Dispose();
+
+            OnComplete?.Invoke();
+
             AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
         }
     }
