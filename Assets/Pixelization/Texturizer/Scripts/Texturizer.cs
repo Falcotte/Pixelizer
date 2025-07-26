@@ -13,6 +13,8 @@ namespace AngryKoala.Pixelization
 
         private Texture2D _newTexture;
 
+        public Texture2D TexturizedTexture { get; set; }
+        
         private enum TexturizationStyle
         {
             PixSize,
@@ -35,9 +37,7 @@ namespace AngryKoala.Pixelization
         public void Texturize(bool saveTexture = false, string customSavePath = "")
         {
             if (_pixelizer.PixCollection.Length == 0)
-            {
                 return;
-            }
 
             if (_newTexture != null && !saveTexture)
             {
@@ -144,7 +144,7 @@ namespace AngryKoala.Pixelization
                 _newTexture.filterMode = FilterMode.Point;
                 _newTexture.Apply();
 
-                _pixelizer.TexturizedTexture = _newTexture;
+                TexturizedTexture = _newTexture;
             }
         }
 

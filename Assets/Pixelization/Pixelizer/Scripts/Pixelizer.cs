@@ -18,9 +18,7 @@ namespace AngryKoala.Pixelization
             get => _sourceTexture;
             set => _sourceTexture = value;
         }
-
-        public Texture2D TexturizedTexture { get; set; }
-
+        
         private bool ShowOriginalDimensions => _sourceTexture != null;
 
         [SerializeField] [ReadOnly] [ShowIf("ShowOriginalDimensions")]
@@ -32,13 +30,13 @@ namespace AngryKoala.Pixelization
         [SerializeField] [OnValueChanged("OnWidthChanged")]
         private int _width;
 
-        [SerializeField] [HideInInspector] private int _currentWidth;
+        private int _currentWidth;
         public int CurrentWidth => _currentWidth;
 
         [SerializeField] [OnValueChanged("OnHeightChanged")]
         private int _height;
 
-        [SerializeField] [HideInInspector] private int _currentHeight;
+        private int _currentHeight;
         public int CurrentHeight => _currentHeight;
 
         [Tooltip("Try to match the width/height ratio of the grid to the texture.")]
@@ -62,6 +60,9 @@ namespace AngryKoala.Pixelization
         
         private void LateUpdate()
         {
+            if (_currentWidth * _currentHeight == 0)
+                return;
+            
             OnGridSizeUpdated?.Invoke(_currentWidth * _pixSize, _currentHeight * _pixSize);
         }
 
@@ -153,7 +154,7 @@ namespace AngryKoala.Pixelization
 
         private void SetPixTextures()
         {
-            _visual.sharedMaterial.SetTexture(MainTex, TexturizedTexture);
+            _visual.sharedMaterial.SetTexture(MainTex, _texturizer.TexturizedTexture);
         }
 
         #region Validation
@@ -171,9 +172,7 @@ namespace AngryKoala.Pixelization
             _width = Mathf.Max(_width, 1);
 
             if (_sourceTexture == null)
-            {
                 return;
-            }
 
             if (_preserveRatio)
             {
@@ -189,9 +188,7 @@ namespace AngryKoala.Pixelization
             _height = Mathf.Max(_height, 1);
 
             if (_sourceTexture == null)
-            {
                 return;
-            }
 
             if (_preserveRatio)
             {
