@@ -1,5 +1,6 @@
 using NaughtyAttributes;
 using UnityEngine;
+using UnityEngine.Events;
 
 namespace AngryKoala.Pixelization
 {
@@ -51,10 +52,17 @@ namespace AngryKoala.Pixelization
         public Pix[] PixCollection => _pixCollection;
 
         private static readonly int MainTex = Shader.PropertyToID("_MainTex");
+        
+        public static UnityAction<float, float> OnGridSizeUpdated;
 
         private void Start()
         {
             Pixelize();
+        }
+        
+        private void LateUpdate()
+        {
+            OnGridSizeUpdated?.Invoke(_currentWidth * _pixSize, _currentHeight * _pixSize);
         }
 
         public void Pixelize()
@@ -79,6 +87,8 @@ namespace AngryKoala.Pixelization
                 SetPixTextures();
             }
 #endif
+            
+            OnGridSizeUpdated?.Invoke(_currentWidth * _pixSize, _currentHeight * _pixSize);
         }
 
         private void CreateGrid()
