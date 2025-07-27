@@ -7,7 +7,7 @@ namespace AngryKoala.Pixelization
     {
         [SerializeField] private Colorizer _colorizer;
         public Colorizer Colorizer => _colorizer;
-        
+
         [SerializeField] private Texturizer _texturizer;
         public Texturizer Texturizer => _texturizer;
 
@@ -64,7 +64,7 @@ namespace AngryKoala.Pixelization
             CreateGrid();
 
             _colorizer.SetPixColors(_sourceTexture, _currentWidth, _currentHeight);
-            
+
             _texturizer.Texturize();
             _texturizer.SetVisualTexture();
         }
@@ -90,7 +90,7 @@ namespace AngryKoala.Pixelization
                     pixIndex++;
                 }
             }
-            
+
             _texturizer.SetVisualSize(_width, _height, _pixSize);
         }
 
@@ -102,6 +102,19 @@ namespace AngryKoala.Pixelization
 
             _originalWidth = _sourceTexture != null ? _sourceTexture.width : 0;
             _originalHeight = _sourceTexture != null ? _sourceTexture.height : 0;
+
+            if (_sourceTexture != null)
+            {
+                _width = Mathf.Clamp(_width, 1, _originalWidth);
+                _height = Mathf.Clamp(_height, 1, _originalHeight);
+            }
+            else
+            {
+                if (_width < 1)
+                    _width = 1;
+                if (_height < 1)
+                    _height = 1;
+            }
         }
 
         private void OnWidthChanged()

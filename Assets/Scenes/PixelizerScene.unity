@@ -303,8 +303,8 @@ MonoBehaviour:
   _pixelizer: {fileID: 1083858433}
   _texturizationStyle: 0
   _pixSize: 10
-  _width: 1
-  _height: 1
+  _width: 10
+  _height: 10
   _textureSavePath: Assets/Pixelization/Texturizer/Textures
 --- !u!4 &1074103729
 Transform:
@@ -370,8 +370,8 @@ MonoBehaviour:
   _sourceTexture: {fileID: 0}
   _originalWidth: 0
   _originalHeight: 0
-  _width: 32
-  _height: 32
+  _width: 1
+  _height: 1
   _preserveRatio: 1
   _pixSize: 1
 --- !u!1 &1710784506
