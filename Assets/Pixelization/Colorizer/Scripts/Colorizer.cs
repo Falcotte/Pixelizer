@@ -234,7 +234,7 @@ namespace AngryKoala.Pixelization
             List<Color> pixels = new List<Color>();
             foreach (var pix in _pixelizer.PixCollection)
             {
-                pixels.Add(pix.OriginalColor);
+                pixels.Add(pix.Color);
             }
 
             int pixelCount = pixels.Count;
@@ -285,6 +285,45 @@ namespace AngryKoala.Pixelization
             }
 
             return centroids.ToList();
+        }
+
+        public void CreateNewColorPalette()
+        {
+#if UNITY_EDITOR
+            if (_colorPaletteColorCount <= 0)
+            {
+                Debug.LogWarning("Color palette color count must be greater than 0");
+                return;
+            }
+
+            List<Color> centroids = GetColorPalette(_colorPaletteColorCount);
+
+            ColorPalette newColorPalette = ScriptableObject.CreateInstance<ColorPalette>();
+
+            foreach (var centroid in centroids)
+            {
+                newColorPalette.Colors.Add(centroid);
+            }
+
+            _colorPalette = newColorPalette;
+#endif
+        }
+
+        public void SaveColorPalette()
+        {
+#if UNITY_EDITOR
+            if (_colorPalette == null)
+            {
+                Debug.LogWarning("Color palette is not assigned");
+                return;
+            }
+
+            string path =
+                UnityEditor.AssetDatabase.GenerateUniqueAssetPath(
+                    "Assets/Pixelization/Colorizer/ScriptableObjects/ColorPalette_.asset");
+
+            UnityEditor.AssetDatabase.CreateAsset(_colorPalette, path);
+#endif
         }
 
         #endregion
