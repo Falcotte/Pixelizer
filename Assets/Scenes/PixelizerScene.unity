@@ -305,7 +305,7 @@ MonoBehaviour:
   _pixSize: 10
   _width: 1
   _height: 1
-  _textureSavePath: 
+  _textureSavePath: Assets/Pixelization/Texturizer/Textures
 --- !u!4 &1074103729
 Transform:
   m_ObjectHideFlags: 0

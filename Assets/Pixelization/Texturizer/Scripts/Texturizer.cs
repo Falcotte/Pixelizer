@@ -1,4 +1,3 @@
-using System;
 using System.IO;
 using NaughtyAttributes;
 #if UNITY_EDITOR
@@ -12,13 +11,13 @@ namespace AngryKoala.Pixelization
     public class Texturizer : MonoBehaviour
     {
         [SerializeField] private Pixelizer _pixelizer;
-        
+
         private MeshRenderer _visual;
-        
+
         private Texture2D _newTexture;
 
         public Texture2D TexturizedTexture { get; set; }
-        
+
         private enum TexturizationStyle
         {
             PixSize,
@@ -37,7 +36,7 @@ namespace AngryKoala.Pixelization
         private int _height;
 
         [SerializeField] private string _textureSavePath;
-        
+
         private static readonly int MainTex = Shader.PropertyToID("_MainTex");
 
         public static UnityAction<float, float> VisualSizeUpdated;
@@ -45,24 +44,24 @@ namespace AngryKoala.Pixelization
         private void CreateVisual()
         {
             GameObject visual = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            
+
             visual.name = "Visual";
             visual.transform.SetParent(transform, false);
             visual.transform.localPosition = Vector3.zero;
-            
+
             _visual = visual.GetComponent<MeshRenderer>();
             _visual.sharedMaterial = new Material(Shader.Find("Unlit/Texture"));
         }
-        
+
         public void SetVisualSize(int width, int height, float pixSize)
         {
             if (_visual == null)
             {
                 CreateVisual();
             }
-            
+
             _visual.transform.localScale = new Vector3(pixSize * width, pixSize * height, 1f);
-            
+
             VisualSizeUpdated?.Invoke(pixSize * width, pixSize * height);
         }
 
@@ -70,7 +69,75 @@ namespace AngryKoala.Pixelization
         {
             _visual.sharedMaterial.SetTexture(MainTex, TexturizedTexture);
         }
-        
+
+        private bool CreateFolderAtSavePath(string savePath)
+        {
+            if (string.IsNullOrWhiteSpace(savePath))
+            {
+                Debug.LogError("Save path is null or empty");
+                return false;
+            }
+
+            if (!savePath.StartsWith("Assets"))
+            {
+                Debug.LogError("Path must start with 'Assets'");
+                return false;
+            }
+
+            if (!AssetDatabase.IsValidFolder(savePath))
+            {
+                string[] parts = savePath.Split('/');
+                string current = parts[0];
+
+                for (int i = 1; i < parts.Length; i++)
+                {
+                    string next = current + "/" + parts[i];
+                    if (!AssetDatabase.IsValidFolder(next))
+                    {
+                        AssetDatabase.CreateFolder(current, parts[i]);
+                    }
+
+                    current = next;
+                }
+
+                AssetDatabase.Refresh();
+            }
+
+            return true;
+        }
+
+        private void SaveTexture(string customSavePath = "")
+        {
+            _textureSavePath = string.IsNullOrEmpty(customSavePath) ? _textureSavePath : customSavePath;
+
+            if (!AssetDatabase.IsValidFolder(_textureSavePath))
+            {
+                if(!CreateFolderAtSavePath(_textureSavePath))
+                    return;
+            }
+
+            string path = AssetDatabase.GenerateUniqueAssetPath($"{_textureSavePath}/Texture.png");
+
+            byte[] bytes = _newTexture.EncodeToPNG();
+            File.WriteAllBytes(path, bytes);
+
+            AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
+
+            TextureImporter importer = (TextureImporter)AssetImporter.GetAtPath(path);
+
+            importer.textureType = TextureImporterType.Default;
+
+            TextureImporterSettings importerSettings = new TextureImporterSettings();
+            importer.ReadTextureSettings(importerSettings);
+
+            importerSettings.npotScale = TextureImporterNPOTScale.None;
+
+            importer.SetTextureSettings(importerSettings);
+
+            EditorUtility.SetDirty(importer);
+            importer.SaveAndReimport();
+        }
+
         public void Texturize(bool saveTexture = false, string customSavePath = "")
         {
             if (_pixelizer.PixCollection.Length == 0)
@@ -146,34 +213,7 @@ namespace AngryKoala.Pixelization
 #if UNITY_EDITOR
             if (saveTexture)
             {
-                _textureSavePath = string.IsNullOrEmpty(customSavePath) ? _textureSavePath : customSavePath;
-
-                if (!AssetDatabase.IsValidFolder(_textureSavePath))
-                {
-                    Debug.LogWarning("Save path is not valid");
-                    return;
-                }
-
-                string path = AssetDatabase.GenerateUniqueAssetPath($"{_textureSavePath}");
-
-                byte[] bytes = _newTexture.EncodeToPNG();
-                File.WriteAllBytes(path, bytes);
-
-                AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
-
-                TextureImporter importer = (TextureImporter)AssetImporter.GetAtPath(path);
-
-                importer.textureType = TextureImporterType.Default;
-
-                TextureImporterSettings importerSettings = new TextureImporterSettings();
-                importer.ReadTextureSettings(importerSettings);
-
-                importerSettings.npotScale = TextureImporterNPOTScale.None;
-
-                importer.SetTextureSettings(importerSettings);
-
-                EditorUtility.SetDirty(importer);
-                importer.SaveAndReimport();
+                SaveTexture(customSavePath);
             }
 #endif
             if (!saveTexture)
