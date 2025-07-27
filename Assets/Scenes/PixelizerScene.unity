@@ -405,6 +405,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   _pixelizer: {fileID: 1083858433}
   _colorPalette: {fileID: 0}
+  _colorPaletteColorCount: 1
+  _createNewColorPalette: 0
   _colorizationStyle: 0
   _replacementStyle: 0
 --- !u!4 &1710784508
