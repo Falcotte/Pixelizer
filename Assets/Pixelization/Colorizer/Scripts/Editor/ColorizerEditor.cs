@@ -31,6 +31,21 @@ namespace AngryKoala.Pixelization
                 _colorizer.Colorize();
             }
 
+            if (GUILayout.Button("Create New Color Palette"))
+            {
+                _colorizer.CreateNewColorPalette();
+            }
+
+            if (GUILayout.Button("Save Color Palette"))
+            {
+                _colorizer.SaveColorPalette();
+            }
+            
+            if(GUILayout.Button("Clear Color Palette"))
+            {
+                _colorizer.ColorPalette.Colors.Clear();
+            }
+
             if (GUILayout.Button("Complement Colors"))
             {
                 _colorizer.ComplementColors();

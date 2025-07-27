@@ -12,6 +12,9 @@ namespace AngryKoala.Pixelization
 
         public Color Color { get; set; }
 
+        // Used with colorizer color groups
+        public int ColorIndex { get; set; }
+
         public void ResetColor()
         {
             Color = OriginalColor;

@@ -116,7 +116,7 @@ namespace AngryKoala.Pixelization
                     return;
             }
 
-            string path = AssetDatabase.GenerateUniqueAssetPath($"{_textureSavePath}/Texture.png");
+            string path = AssetDatabase.GenerateUniqueAssetPath($"{_textureSavePath}/Texture_.png");
 
             byte[] bytes = _newTexture.EncodeToPNG();
             File.WriteAllBytes(path, bytes);
