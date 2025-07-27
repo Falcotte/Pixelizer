@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using NaughtyAttributes;
 using UnityEngine;
 
 namespace AngryKoala.Pixelization
@@ -9,6 +10,9 @@ namespace AngryKoala.Pixelization
 
         [SerializeField] private ColorPalette _colorPalette;
         public ColorPalette ColorPalette => _colorPalette;
+
+        [SerializeField] [OnValueChanged("OnColorPaletteColorCountChanged")] [Range(1, 10)]
+        private int _colorPaletteColorCount;
 
         private enum ColorizationStyle
         {
@@ -202,6 +206,30 @@ namespace AngryKoala.Pixelization
             return closestColor;
         }
 
+        #region Color Operations
+
+        public void ComplementColors()
+        {
+            foreach (var pix in _pixelizer.PixCollection)
+            {
+                pix.ComplementColor();
+            }
+
+            _pixelizer.Texturizer.Texturize();
+            _pixelizer.Texturizer.SetVisualTexture();
+        }
+
+        public void InvertColors()
+        {
+            foreach (var pix in _pixelizer.PixCollection)
+            {
+                pix.InvertColor();
+            }
+
+            _pixelizer.Texturizer.Texturize();
+            _pixelizer.Texturizer.SetVisualTexture();
+        }
+
         public void ResetColors()
         {
             foreach (var pix in _pixelizer.PixCollection)
@@ -212,5 +240,12 @@ namespace AngryKoala.Pixelization
             _pixelizer.Texturizer.Texturize();
             _pixelizer.Texturizer.SetVisualTexture();
         }
+
+        private void OnColorPaletteColorCountChanged()
+        {
+            _colorPaletteColorCount = Mathf.Max(_colorPaletteColorCount, 1);
+        }
+
+        #endregion
     }
 }

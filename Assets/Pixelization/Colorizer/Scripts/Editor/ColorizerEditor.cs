@@ -19,7 +19,7 @@ namespace AngryKoala.Pixelization
             }
 
             EditorGUI.BeginDisabledGroup(!EditorApplication.isPlaying);
-            
+
             if (GUILayout.Button("Colorize"))
             {
                 _colorizer.Colorize();
@@ -31,11 +31,21 @@ namespace AngryKoala.Pixelization
                 _colorizer.Colorize();
             }
 
+            if (GUILayout.Button("Complement Colors"))
+            {
+                _colorizer.ComplementColors();
+            }
+
+            if (GUILayout.Button("Invert Colors"))
+            {
+                _colorizer.InvertColors();
+            }
+
             if (GUILayout.Button("Reset Colors"))
             {
                 _colorizer.ResetColors();
             }
-            
+
             EditorGUI.EndDisabledGroup();
         }
     }
