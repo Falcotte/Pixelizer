@@ -140,8 +140,11 @@ namespace AngryKoala.Pixelization
 
         public void Texturize(bool saveTexture = false, string customSavePath = "")
         {
-            if (_pixelizer.PixCollection.Length == 0)
+            if (_pixelizer.PixCollection == null || _pixelizer.PixCollection.Length == 0)
+            {
+                Debug.LogWarning("Pixelize a texture first");
                 return;
+            }
 
             if (_newTexture != null && !saveTexture)
             {
