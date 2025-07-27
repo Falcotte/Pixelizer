@@ -11,5 +11,10 @@ namespace AngryKoala.Pixelization
         public Color OriginalColor { get; set; }
         
         public Color Color { get; set; }
+
+        public void ResetColor()
+        {
+            Color = OriginalColor;
+        }
     }
 }

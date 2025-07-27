@@ -9,6 +9,7 @@ namespace AngryKoala.Pixelization
         [SerializeField] private MeshRenderer _visual;
 
         [SerializeField] private Texturizer _texturizer;
+        public Texturizer Texturizer => _texturizer;
 
         [SerializeField] [OnValueChanged("PreserveRatio")]
         private Texture2D _sourceTexture;
@@ -18,7 +19,7 @@ namespace AngryKoala.Pixelization
             get => _sourceTexture;
             set => _sourceTexture = value;
         }
-        
+
         private bool ShowOriginalDimensions => _sourceTexture != null;
 
         [SerializeField] [ReadOnly] [ShowIf("ShowOriginalDimensions")]
@@ -50,19 +51,19 @@ namespace AngryKoala.Pixelization
         public Pix[] PixCollection => _pixCollection;
 
         private static readonly int MainTex = Shader.PropertyToID("_MainTex");
-        
+
         public static UnityAction<float, float> OnGridSizeUpdated;
 
         private void Start()
         {
             Pixelize();
         }
-        
+
         private void LateUpdate()
         {
             if (_currentWidth * _currentHeight == 0)
                 return;
-            
+
             OnGridSizeUpdated?.Invoke(_currentWidth * _pixSize, _currentHeight * _pixSize);
         }
 
@@ -88,7 +89,7 @@ namespace AngryKoala.Pixelization
                 SetPixTextures();
             }
 #endif
-            
+
             OnGridSizeUpdated?.Invoke(_currentWidth * _pixSize, _currentHeight * _pixSize);
         }
 
@@ -152,7 +153,7 @@ namespace AngryKoala.Pixelization
             return new Color(r, g, b);
         }
 
-        private void SetPixTextures()
+        public void SetPixTextures()
         {
             _visual.sharedMaterial.SetTexture(MainTex, _texturizer.TexturizedTexture);
         }
