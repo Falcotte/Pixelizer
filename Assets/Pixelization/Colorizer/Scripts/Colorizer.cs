@@ -12,10 +12,13 @@ namespace AngryKoala.Pixelization
         [SerializeField] private ColorPalette _colorPalette;
         public ColorPalette ColorPalette => _colorPalette;
 
-        [SerializeField] [OnValueChanged("OnColorPaletteColorCountChanged")] [Range(1, 10)]
-        private int _colorPaletteColorCount;
-
         [SerializeField] private bool _createNewColorPalette;
+        
+        [SerializeField]
+        [ShowIf("_createNewColorPalette")]
+        [OnValueChanged("OnColorPaletteColorCountChanged")]
+        [Range(1, 10)]
+        private int _newColorPaletteColorCount = 1;
 
         private List<Color> _newColorPaletteColors = new();
 
@@ -36,6 +39,11 @@ namespace AngryKoala.Pixelization
         }
 
         [SerializeField] private ReplacementStyle _replacementStyle;
+
+        [SerializeField] private bool _useColorGroups;
+
+        private List<Color> _colorGroupsColors = new();
+        private List<Color> _sortedColorPaletteColors = new();
 
         public void SetPixColors(Texture2D sourceTexture, int width, int height)
         {
@@ -75,7 +83,7 @@ namespace AngryKoala.Pixelization
 
         public void Colorize()
         {
-            if (_pixelizer.PixCollection.Length == 0)
+            if (_pixelizer.PixCollection == null || _pixelizer.PixCollection.Length == 0)
             {
                 Debug.LogWarning("Pixelize a texture first");
                 return;
@@ -85,7 +93,12 @@ namespace AngryKoala.Pixelization
             {
                 ColorPalette newColorPalette = ScriptableObject.CreateInstance<ColorPalette>();
 
-                _newColorPaletteColors = GetColorPalette(_colorPaletteColorCount);
+                _newColorPaletteColors = GetColorPalette(_newColorPaletteColorCount);
+
+                if (_useColorGroups)
+                {
+                    _colorGroupsColors = _newColorPaletteColors;
+                }
 
                 foreach (var color in _newColorPaletteColors)
                 {
@@ -107,15 +120,38 @@ namespace AngryKoala.Pixelization
                 return;
             }
 
+            if (_useColorGroups)
+            {
+                if (!_createNewColorPalette)
+                {
+                    _colorGroupsColors = GetColorPalette(_colorPalette.Colors.Count);
+                }
+
+                MapColorPaletteColorsToColorGroupsColors();
+            }
+
             for (int i = 0; i < _pixelizer.PixCollection.Length; i++)
             {
                 switch (_colorizationStyle)
                 {
                     case ColorizationStyle.Replace:
-                        Color closestColor = GetClosestColor(_pixelizer.PixCollection[i].Color,
-                            _colorPalette.Colors, _replacementStyle);
+                        if (_useColorGroups)
+                        {
+                            Color closestColor = GetClosestColor(_pixelizer.PixCollection[i].Color, _colorGroupsColors,
+                                _replacementStyle);
 
-                        _pixelizer.PixCollection[i].Color = closestColor;
+                            _pixelizer.PixCollection[i].ColorIndex = _colorGroupsColors.IndexOf(closestColor);
+                            _pixelizer.PixCollection[i].Color =
+                                _sortedColorPaletteColors[_pixelizer.PixCollection[i].ColorIndex];
+                        }
+                        else
+                        {
+                            Color closestColor = GetClosestColor(_pixelizer.PixCollection[i].Color,
+                                _colorPalette.Colors, _replacementStyle);
+
+                            _pixelizer.PixCollection[i].Color = closestColor;
+                        }
+
                         break;
 
                     case ColorizationStyle.ReplaceWithOriginalSaturation:
@@ -123,7 +159,16 @@ namespace AngryKoala.Pixelization
                         Color originalColor = _pixelizer.PixCollection[i].Color;
                         Color adjustedColor;
 
-                        adjustedColor = GetClosestColor(originalColor, _colorPalette.Colors, _replacementStyle);
+                        if (_useColorGroups)
+                        {
+                            adjustedColor = GetClosestColor(originalColor, _colorGroupsColors, _replacementStyle);
+                            _pixelizer.PixCollection[i].ColorIndex = _colorGroupsColors.IndexOf(adjustedColor);
+                            adjustedColor = _sortedColorPaletteColors[_pixelizer.PixCollection[i].ColorIndex];
+                        }
+                        else
+                        {
+                            adjustedColor = GetClosestColor(originalColor, _colorPalette.Colors, _replacementStyle);
+                        }
 
                         float hue, saturation, value;
                         Color.RGBToHSV(adjustedColor, out hue, out saturation, out value);
@@ -141,7 +186,16 @@ namespace AngryKoala.Pixelization
                         Color originalColor = _pixelizer.PixCollection[i].Color;
                         Color adjustedColor;
 
-                        adjustedColor = GetClosestColor(originalColor, _colorPalette.Colors, _replacementStyle);
+                        if (_useColorGroups)
+                        {
+                            adjustedColor = GetClosestColor(originalColor, _colorGroupsColors, _replacementStyle);
+                            _pixelizer.PixCollection[i].ColorIndex = _colorGroupsColors.IndexOf(adjustedColor);
+                            adjustedColor = _sortedColorPaletteColors[_pixelizer.PixCollection[i].ColorIndex];
+                        }
+                        else
+                        {
+                            adjustedColor = GetClosestColor(originalColor, _colorPalette.Colors, _replacementStyle);
+                        }
 
                         float hue, saturation, value;
                         Color.RGBToHSV(adjustedColor, out hue, out saturation, out value);
@@ -290,13 +344,13 @@ namespace AngryKoala.Pixelization
         public void CreateNewColorPalette()
         {
 #if UNITY_EDITOR
-            if (_colorPaletteColorCount <= 0)
+            if (_newColorPaletteColorCount <= 0)
             {
                 Debug.LogWarning("Color palette color count must be greater than 0");
                 return;
             }
 
-            List<Color> centroids = GetColorPalette(_colorPaletteColorCount);
+            List<Color> centroids = GetColorPalette(_newColorPaletteColorCount);
 
             ColorPalette newColorPalette = ScriptableObject.CreateInstance<ColorPalette>();
 
@@ -324,6 +378,74 @@ namespace AngryKoala.Pixelization
 
             UnityEditor.AssetDatabase.CreateAsset(_colorPalette, path);
 #endif
+        }
+
+        private void MapColorPaletteColorsToColorGroupsColors()
+        {
+            List<List<Color>> colorPermutations = GetAllColorPermutations(_colorPalette.Colors);
+
+            int closestColorPermutationIndex = 0;
+            float difference = Mathf.Infinity;
+
+            for (int i = 0; i < colorPermutations.Count; i++)
+            {
+                float currentDifference = 0f;
+
+                for (int j = 0; j < _colorPalette.Colors.Count; j++)
+                {
+                    currentDifference += GetColorDifference(_colorGroupsColors[j], colorPermutations[i][j]);
+                }
+
+                if (currentDifference < difference)
+                {
+                    difference = currentDifference;
+                    closestColorPermutationIndex = i;
+                }
+            }
+
+            _sortedColorPaletteColors = colorPermutations[closestColorPermutationIndex];
+        }
+
+        private List<List<Color>> GetAllColorPermutations(List<Color> colors)
+        {
+            List<List<Color>> colorPermutations = new List<List<Color>>();
+
+            if (colors.Count == 0)
+            {
+                colorPermutations.Add(new List<Color>());
+                return colorPermutations;
+            }
+
+            Color firstElement = colors[0];
+            List<Color> remainingList = colors.GetRange(1, colors.Count - 1);
+            List<List<Color>> subPermutations = GetAllColorPermutations(remainingList);
+
+            foreach (List<Color> permutation in subPermutations)
+            {
+                for (int i = 0; i <= permutation.Count; i++)
+                {
+                    List<Color> newPermutation = new List<Color>(permutation);
+                    newPermutation.Insert(i, firstElement);
+                    colorPermutations.Add(newPermutation);
+                }
+            }
+
+            return colorPermutations;
+        }
+
+        private float GetColorDifference(Color color1, Color color2)
+        {
+            switch (_replacementStyle)
+            {
+                case ReplacementStyle.ReplaceUsingHue:
+                    return color1.HueDifference(color2);
+                case ReplacementStyle.ReplaceUsingSaturation:
+                    return color1.SaturationDifference(color2);
+                case ReplacementStyle.ReplaceUsingValue:
+                    return color1.ValueDifference(color2);
+            }
+
+            return 0f;
         }
 
         #endregion
@@ -365,7 +487,7 @@ namespace AngryKoala.Pixelization
 
         private void OnColorPaletteColorCountChanged()
         {
-            _colorPaletteColorCount = Mathf.Max(_colorPaletteColorCount, 1);
+            _newColorPaletteColorCount = Mathf.Max(_newColorPaletteColorCount, 1);
         }
 
         #endregion
