@@ -18,6 +18,8 @@ namespace AngryKoala.Pixelization
                 _colorizer = (Colorizer)target;
             }
 
+            EditorGUI.BeginDisabledGroup(!EditorApplication.isPlaying);
+            
             if (GUILayout.Button("Colorize"))
             {
                 _colorizer.Colorize();
@@ -33,6 +35,8 @@ namespace AngryKoala.Pixelization
             {
                 _colorizer.ResetColors();
             }
+            
+            EditorGUI.EndDisabledGroup();
         }
     }
 }

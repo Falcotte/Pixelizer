@@ -28,6 +28,42 @@ namespace AngryKoala.Pixelization
 
         [SerializeField] private ReplacementStyle _replacementStyle;
 
+        public void SetPixColors(Texture2D sourceTexture, int width, int height)
+        {
+            float textureAreaX = (float)sourceTexture.width / width;
+            float textureAreaY = (float)sourceTexture.height / height;
+
+            for (int i = 0; i < width * height; i++)
+            {
+                Color color = GetAverageColor(sourceTexture.GetPixels(Mathf.FloorToInt((i / height) * textureAreaX),
+                    Mathf.FloorToInt(i % height * textureAreaY), Mathf.FloorToInt(textureAreaX),
+                    Mathf.FloorToInt(textureAreaY)));
+
+                _pixelizer.PixCollection[i].OriginalColor = color;
+                _pixelizer.PixCollection[i].Color = color;
+            }
+        }
+
+        private Color GetAverageColor(Color[] colors)
+        {
+            float r = 0f;
+            float g = 0f;
+            float b = 0f;
+
+            for (int i = 0; i < colors.Length; i++)
+            {
+                r += colors[i].r;
+                g += colors[i].g;
+                b += colors[i].b;
+            }
+
+            r /= colors.Length;
+            g /= colors.Length;
+            b /= colors.Length;
+
+            return new Color(r, g, b);
+        }
+
         public void Colorize()
         {
             if (_pixelizer.PixCollection.Length == 0)
@@ -81,14 +117,14 @@ namespace AngryKoala.Pixelization
                     {
                         Color originalColor = _pixelizer.PixCollection[i].Color;
                         Color adjustedColor;
-                        
+
                         adjustedColor = GetClosestColor(originalColor, _colorPalette.Colors, _replacementStyle);
 
                         float hue, saturation, value;
                         Color.RGBToHSV(adjustedColor, out hue, out saturation, out value);
 
                         float originalValue = originalColor.Value();
-                        
+
                         adjustedColor = Color.HSVToRGB(hue, saturation, originalValue);
 
                         _pixelizer.PixCollection[i].Color = adjustedColor;
@@ -98,9 +134,9 @@ namespace AngryKoala.Pixelization
             }
 
             _pixelizer.Texturizer.Texturize();
-            _pixelizer.SetPixTextures();
+            _pixelizer.Texturizer.SetVisualTexture();
         }
-        
+
         private Color GetClosestColor(Color color, List<Color> colorizerColors, ReplacementStyle replacementStyle)
         {
             float hue, saturation, value;
@@ -165,7 +201,7 @@ namespace AngryKoala.Pixelization
 
             return closestColor;
         }
-        
+
         public void ResetColors()
         {
             foreach (var pix in _pixelizer.PixCollection)
@@ -174,7 +210,7 @@ namespace AngryKoala.Pixelization
             }
 
             _pixelizer.Texturizer.Texturize();
-            _pixelizer.SetPixTextures();
+            _pixelizer.Texturizer.SetVisualTexture();
         }
     }
 }

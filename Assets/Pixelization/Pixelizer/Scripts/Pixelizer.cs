@@ -1,13 +1,13 @@
 using NaughtyAttributes;
 using UnityEngine;
-using UnityEngine.Events;
 
 namespace AngryKoala.Pixelization
 {
     public class Pixelizer : MonoBehaviour
     {
-        [SerializeField] private MeshRenderer _visual;
-
+        [SerializeField] private Colorizer _colorizer;
+        public Colorizer Colorizer => _colorizer;
+        
         [SerializeField] private Texturizer _texturizer;
         public Texturizer Texturizer => _texturizer;
 
@@ -50,23 +50,6 @@ namespace AngryKoala.Pixelization
         private Pix[] _pixCollection;
         public Pix[] PixCollection => _pixCollection;
 
-        private static readonly int MainTex = Shader.PropertyToID("_MainTex");
-
-        public static UnityAction<float, float> OnGridSizeUpdated;
-
-        private void Start()
-        {
-            Pixelize();
-        }
-
-        private void LateUpdate()
-        {
-            if (_currentWidth * _currentHeight == 0)
-                return;
-
-            OnGridSizeUpdated?.Invoke(_currentWidth * _pixSize, _currentHeight * _pixSize);
-        }
-
         public void Pixelize()
         {
             if (_width * _height == 0)
@@ -80,17 +63,10 @@ namespace AngryKoala.Pixelization
 
             CreateGrid();
 
-            SetPixColors();
-
-#if UNITY_EDITOR
-            if (UnityEditor.EditorApplication.isPlaying)
-            {
-                _texturizer.Texturize();
-                SetPixTextures();
-            }
-#endif
-
-            OnGridSizeUpdated?.Invoke(_currentWidth * _pixSize, _currentHeight * _pixSize);
+            _colorizer.SetPixColors(_sourceTexture, _currentWidth, _currentHeight);
+            
+            _texturizer.Texturize();
+            _texturizer.SetVisualTexture();
         }
 
         private void CreateGrid()
@@ -113,49 +89,8 @@ namespace AngryKoala.Pixelization
                     pixIndex++;
                 }
             }
-
-            _visual.transform.localScale = new Vector3(_pixSize * _width, _pixSize * _height, 1f);
-        }
-
-        private void SetPixColors()
-        {
-            float textureAreaX = (float)_sourceTexture.width / _width;
-            float textureAreaY = (float)_sourceTexture.height / _height;
-
-            for (int i = 0; i < _width * _height; i++)
-            {
-                Color color = GetAverageColor(_sourceTexture.GetPixels(Mathf.FloorToInt((i / _height) * textureAreaX),
-                    Mathf.FloorToInt(i % _height * textureAreaY), Mathf.FloorToInt(textureAreaX),
-                    Mathf.FloorToInt(textureAreaY)));
-
-                _pixCollection[i].OriginalColor = color;
-                _pixCollection[i].Color = color;
-            }
-        }
-
-        private Color GetAverageColor(Color[] colors)
-        {
-            float r = 0f;
-            float g = 0f;
-            float b = 0f;
-
-            for (int i = 0; i < colors.Length; i++)
-            {
-                r += colors[i].r;
-                g += colors[i].g;
-                b += colors[i].b;
-            }
-
-            r /= colors.Length;
-            g /= colors.Length;
-            b /= colors.Length;
-
-            return new Color(r, g, b);
-        }
-
-        public void SetPixTextures()
-        {
-            _visual.sharedMaterial.SetTexture(MainTex, _texturizer.TexturizedTexture);
+            
+            _texturizer.SetVisualSize(_width, _height, _pixSize);
         }
 
         #region Validation

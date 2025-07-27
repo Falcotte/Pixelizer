@@ -1,16 +1,20 @@
+using System;
 using System.IO;
 using NaughtyAttributes;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
 using UnityEngine;
+using UnityEngine.Events;
 
 namespace AngryKoala.Pixelization
 {
     public class Texturizer : MonoBehaviour
     {
         [SerializeField] private Pixelizer _pixelizer;
-
+        
+        private MeshRenderer _visual;
+        
         private Texture2D _newTexture;
 
         public Texture2D TexturizedTexture { get; set; }
@@ -33,7 +37,40 @@ namespace AngryKoala.Pixelization
         private int _height;
 
         [SerializeField] private string _textureSavePath;
+        
+        private static readonly int MainTex = Shader.PropertyToID("_MainTex");
 
+        public static UnityAction<float, float> VisualSizeUpdated;
+
+        private void CreateVisual()
+        {
+            GameObject visual = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            
+            visual.name = "Visual";
+            visual.transform.SetParent(transform, false);
+            visual.transform.localPosition = Vector3.zero;
+            
+            _visual = visual.GetComponent<MeshRenderer>();
+            _visual.sharedMaterial = new Material(Shader.Find("Unlit/Texture"));
+        }
+        
+        public void SetVisualSize(int width, int height, float pixSize)
+        {
+            if (_visual == null)
+            {
+                CreateVisual();
+            }
+            
+            _visual.transform.localScale = new Vector3(pixSize * width, pixSize * height, 1f);
+            
+            VisualSizeUpdated?.Invoke(pixSize * width, pixSize * height);
+        }
+
+        public void SetVisualTexture()
+        {
+            _visual.sharedMaterial.SetTexture(MainTex, TexturizedTexture);
+        }
+        
         public void Texturize(bool saveTexture = false, string customSavePath = "")
         {
             if (_pixelizer.PixCollection.Length == 0)
