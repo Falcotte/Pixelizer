@@ -13,7 +13,7 @@ namespace AngryKoala.Pixelization
         public ColorPalette ColorPalette => _colorPalette;
 
         [SerializeField] private bool _createNewColorPalette;
-        
+
         [SerializeField]
         [ShowIf("_createNewColorPalette")]
         [OnValueChanged("OnColorPaletteColorCountChanged")]
@@ -26,7 +26,8 @@ namespace AngryKoala.Pixelization
         {
             Replace,
             ReplaceWithOriginalSaturation,
-            ReplaceWithOriginalValue
+            ReplaceWithOriginalValue,
+            ReplaceWithOriginalSaturationAndValue
         }
 
         [SerializeField] private ColorizationStyle _colorizationStyle;
@@ -203,6 +204,34 @@ namespace AngryKoala.Pixelization
                         float originalValue = originalColor.Value();
 
                         adjustedColor = Color.HSVToRGB(hue, saturation, originalValue);
+
+                        _pixelizer.PixCollection[i].Color = adjustedColor;
+                    }
+                        break;
+
+                    case ColorizationStyle.ReplaceWithOriginalSaturationAndValue:
+                    {
+                        Color originalColor = _pixelizer.PixCollection[i].Color;
+                        Color adjustedColor;
+
+                        if (_useColorGroups)
+                        {
+                            adjustedColor = GetClosestColor(originalColor, _colorGroupsColors, _replacementStyle);
+                            _pixelizer.PixCollection[i].ColorIndex = _colorGroupsColors.IndexOf(adjustedColor);
+                            adjustedColor = _sortedColorPaletteColors[_pixelizer.PixCollection[i].ColorIndex];
+                        }
+                        else
+                        {
+                            adjustedColor = GetClosestColor(originalColor, _colorPalette.Colors, _replacementStyle);
+                        }
+
+                        float hue, saturation, value;
+                        Color.RGBToHSV(adjustedColor, out hue, out saturation, out value);
+
+                        float originalValue = originalColor.Value();
+                        float originalSaturation = originalColor.Saturation();
+                        
+                        adjustedColor = Color.HSVToRGB(hue, originalSaturation, originalValue);
 
                         _pixelizer.PixCollection[i].Color = adjustedColor;
                     }
