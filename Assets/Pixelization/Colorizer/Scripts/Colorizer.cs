@@ -25,8 +25,6 @@ namespace AngryKoala.Pixelization
         private enum ColorizationStyle
         {
             Replace,
-            ReplaceWithOriginalSaturation,
-            ReplaceWithOriginalValue,
             ReplaceWithOriginalSaturationAndValue
         }
 
@@ -153,60 +151,6 @@ namespace AngryKoala.Pixelization
                             _pixelizer.PixCollection[i].Color = closestColor;
                         }
 
-                        break;
-
-                    case ColorizationStyle.ReplaceWithOriginalSaturation:
-                    {
-                        Color originalColor = _pixelizer.PixCollection[i].Color;
-                        Color adjustedColor;
-
-                        if (_useColorGroups)
-                        {
-                            adjustedColor = GetClosestColor(originalColor, _colorGroupsColors, _replacementStyle);
-                            _pixelizer.PixCollection[i].ColorIndex = _colorGroupsColors.IndexOf(adjustedColor);
-                            adjustedColor = _sortedColorPaletteColors[_pixelizer.PixCollection[i].ColorIndex];
-                        }
-                        else
-                        {
-                            adjustedColor = GetClosestColor(originalColor, _colorPalette.Colors, _replacementStyle);
-                        }
-
-                        float hue, saturation, value;
-                        Color.RGBToHSV(adjustedColor, out hue, out saturation, out value);
-
-                        float originalSaturation = originalColor.Saturation();
-
-                        adjustedColor = Color.HSVToRGB(hue, originalSaturation, value);
-
-                        _pixelizer.PixCollection[i].Color = adjustedColor;
-                    }
-                        break;
-
-                    case ColorizationStyle.ReplaceWithOriginalValue:
-                    {
-                        Color originalColor = _pixelizer.PixCollection[i].Color;
-                        Color adjustedColor;
-
-                        if (_useColorGroups)
-                        {
-                            adjustedColor = GetClosestColor(originalColor, _colorGroupsColors, _replacementStyle);
-                            _pixelizer.PixCollection[i].ColorIndex = _colorGroupsColors.IndexOf(adjustedColor);
-                            adjustedColor = _sortedColorPaletteColors[_pixelizer.PixCollection[i].ColorIndex];
-                        }
-                        else
-                        {
-                            adjustedColor = GetClosestColor(originalColor, _colorPalette.Colors, _replacementStyle);
-                        }
-
-                        float hue, saturation, value;
-                        Color.RGBToHSV(adjustedColor, out hue, out saturation, out value);
-
-                        float originalValue = originalColor.Value();
-
-                        adjustedColor = Color.HSVToRGB(hue, saturation, originalValue);
-
-                        _pixelizer.PixCollection[i].Color = adjustedColor;
-                    }
                         break;
 
                     case ColorizationStyle.ReplaceWithOriginalSaturationAndValue:
