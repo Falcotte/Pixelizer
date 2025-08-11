@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using NaughtyAttributes;
 using UnityEngine;
@@ -33,7 +34,6 @@ namespace AngryKoala.Pixelization
 
         [SerializeField] [ShowIf("_useValueRamp")] [Range(2, 10)]
         private int _rampCount = 2;
-
 
         private List<Color> _colorGroupsColors = new();
         private List<Color> _sortedColorPaletteColors = new();
@@ -372,7 +372,19 @@ namespace AngryKoala.Pixelization
                 UnityEditor.AssetDatabase.GenerateUniqueAssetPath(
                     "Assets/Pixelization/Colorizer/ScriptableObjects/ColorPalette_.asset");
 
-            UnityEditor.AssetDatabase.CreateAsset(_colorPalette, path);
+            ColorPalette colorPalette = UnityEditor.AssetDatabase.Contains(_colorPalette)
+                ? Instantiate(_colorPalette)
+                : _colorPalette;
+
+            colorPalette.name = Path.GetFileNameWithoutExtension(path);
+
+            UnityEditor.AssetDatabase.CreateAsset(colorPalette, path);
+            UnityEditor.AssetDatabase.SaveAssets();
+            UnityEditor.AssetDatabase.Refresh(UnityEditor.ImportAssetOptions.ForceUpdate);
+            
+            Debug.Log($"Color palette saved as {colorPalette.name}");
+            
+            UnityEditor.EditorGUIUtility.PingObject(colorPalette);
 #endif
         }
 
