@@ -22,11 +22,6 @@ namespace AngryKoala.Pixelization
 
             if (GUILayout.Button("Colorize"))
             {
-                _colorizer.Colorize();
-            }
-
-            if (GUILayout.Button("Recolorize"))
-            {
                 _colorizer.ResetColors();
                 _colorizer.Colorize();
             }
