@@ -44,13 +44,12 @@ namespace AngryKoala.Pixelization
             float originalH, originalS, originalV;
             Color.RGBToHSV(c, out originalH, out originalS, out originalV);
             return new Color(originalH, originalS, v);
-
         }
 
         public static float HueDifference(this Color c1, Color c2)
         {
-            float difference = Mathf.Abs(c1.Hue() - c2.Hue());
-            return difference > 0.5f ? (1.0f - difference) : difference;
+            float hueDifference = Mathf.Abs(c1.Hue() - c2.Hue());
+            return Mathf.Min(hueDifference, 1f - hueDifference) * 2f;
         }
 
         public static float SaturationDifference(this Color c1, Color c2)
