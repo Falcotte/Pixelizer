@@ -12,12 +12,9 @@ namespace AngryKoala.Pixelization
         [SerializeField] private ColorPalette _colorPalette;
         public ColorPalette ColorPalette => _colorPalette;
 
-        [SerializeField] private bool _createNewColorPalette;
+        [SerializeField] private bool _createNewColorPaletteOnColorize;
 
-        [SerializeField]
-        [ShowIf("_createNewColorPalette")]
-        [OnValueChanged("OnColorPaletteColorCountChanged")]
-        [Range(1, 10)]
+        [SerializeField] [OnValueChanged("OnColorPaletteColorCountChanged")] [Range(1, 10)]
         private int _newColorPaletteColorCount = 1;
 
         private List<Color> _newColorPaletteColors = new();
@@ -31,6 +28,12 @@ namespace AngryKoala.Pixelization
         [SerializeField] private ColorizationStyle _colorizationStyle;
 
         [SerializeField] private bool _useColorGroups;
+
+        [SerializeField] private bool _useValueRamp;
+
+        [SerializeField] [ShowIf("_useValueRamp")] [Range(2, 10)]
+        private int _rampCount = 2;
+
 
         private List<Color> _colorGroupsColors = new();
         private List<Color> _sortedColorPaletteColors = new();
@@ -79,7 +82,7 @@ namespace AngryKoala.Pixelization
                 return;
             }
 
-            if (_createNewColorPalette)
+            if (_createNewColorPaletteOnColorize)
             {
                 ColorPalette newColorPalette = ScriptableObject.CreateInstance<ColorPalette>();
 
@@ -112,7 +115,7 @@ namespace AngryKoala.Pixelization
 
             if (_useColorGroups)
             {
-                if (!_createNewColorPalette)
+                if (!_createNewColorPaletteOnColorize)
                 {
                     _colorGroupsColors = GetColorPalette(_colorPalette.Colors.Count);
                 }
@@ -122,25 +125,52 @@ namespace AngryKoala.Pixelization
 
             for (int i = 0; i < _pixelizer.PixCollection.Length; i++)
             {
+                float rampValue = 0f;
+
+                if (_useValueRamp)
+                {
+                    rampValue = SnapToNearestRamp(_pixelizer.PixCollection[i].Color.Value(), _rampCount);
+                }
+
                 switch (_colorizationStyle)
                 {
                     case ColorizationStyle.Replace:
+                    {
+                        Color closestColor;
+
                         if (_useColorGroups)
                         {
-                            Color closestColor = GetClosestColor(_pixelizer.PixCollection[i].Color, _colorGroupsColors);
+                            closestColor = GetClosestColor(_pixelizer.PixCollection[i].Color, _colorGroupsColors);
 
                             _pixelizer.PixCollection[i].ColorIndex = _colorGroupsColors.IndexOf(closestColor);
-                            _pixelizer.PixCollection[i].Color =
-                                _sortedColorPaletteColors[_pixelizer.PixCollection[i].ColorIndex];
+
+                            Color color = _sortedColorPaletteColors[_pixelizer.PixCollection[i].ColorIndex];
+
+                            if (_useValueRamp)
+                            {
+                                Color.RGBToHSV(color, out float hue, out float saturation, out float value);
+                                _pixelizer.PixCollection[i].Color = Color.HSVToRGB(hue, saturation, rampValue);
+                            }
+                            else
+                            {
+                                _pixelizer.PixCollection[i].Color = color;
+                            }
                         }
                         else
                         {
-                            Color closestColor = GetClosestColor(_pixelizer.PixCollection[i].Color,
+                            closestColor = GetClosestColor(_pixelizer.PixCollection[i].Color,
                                 _colorPalette.Colors);
+
+                            if (_useValueRamp)
+                            {
+                                Color.RGBToHSV(closestColor, out float hue, out float saturation, out float value);
+
+                                closestColor = Color.HSVToRGB(hue, saturation, rampValue);
+                            }
 
                             _pixelizer.PixCollection[i].Color = closestColor;
                         }
-
+                    }
                         break;
 
                     case ColorizationStyle.ReplaceWithOriginalSaturationAndValue:
@@ -152,20 +182,32 @@ namespace AngryKoala.Pixelization
                         {
                             adjustedColor = GetClosestColor(originalColor, _colorGroupsColors);
                             _pixelizer.PixCollection[i].ColorIndex = _colorGroupsColors.IndexOf(adjustedColor);
-                            adjustedColor = _sortedColorPaletteColors[_pixelizer.PixCollection[i].ColorIndex];
+
+                            if (_useValueRamp)
+                            {
+                                Color.RGBToHSV(adjustedColor, out float hue, out float saturation, out float value);
+                                adjustedColor = Color.HSVToRGB(hue, originalColor.Saturation(), rampValue);
+                            }
+                            else
+                            {
+                                adjustedColor = _sortedColorPaletteColors[_pixelizer.PixCollection[i].ColorIndex];
+                            }
                         }
                         else
                         {
                             adjustedColor = GetClosestColor(originalColor, _colorPalette.Colors);
+
+                            if (_useValueRamp)
+                            {
+                                adjustedColor = Color.HSVToRGB(adjustedColor.Hue(), originalColor.Saturation(),
+                                    rampValue);
+                            }
+                            else
+                            {
+                                adjustedColor = Color.HSVToRGB(adjustedColor.Hue(), originalColor.Saturation(),
+                                    originalColor.Value());
+                            }
                         }
-
-                        float hue, saturation, value;
-                        Color.RGBToHSV(adjustedColor, out hue, out saturation, out value);
-
-                        float originalValue = originalColor.Value();
-                        float originalSaturation = originalColor.Saturation();
-
-                        adjustedColor = Color.HSVToRGB(hue, originalSaturation, originalValue);
 
                         _pixelizer.PixCollection[i].Color = adjustedColor;
                     }
@@ -202,7 +244,7 @@ namespace AngryKoala.Pixelization
                 Vector3 colorizerColorHue = new Vector3(colorizerColor.r, colorizerColor.g, colorizerColor.b);
 
                 float difference = GetColorDifference(colorizerColor, color);
-                
+
                 if (difference < colorDifference)
                 {
                     closestColor = colorizerColor;
@@ -213,8 +255,16 @@ namespace AngryKoala.Pixelization
             return closestColor;
         }
 
+        private float SnapToNearestRamp(float value, int rampCount)
+        {
+            float step = 1f / (rampCount - 1);
+            int rampIndex = (int)Mathf.Round(value / step);
+
+            return rampIndex * step;
+        }
+
         #region Color Palette
-        
+
         /// <summary>
         /// Generates a representative color palette of the specified size from the pixel data
         /// in <c>PixCollection</c> using a k-means–like clustering algorithm.
@@ -396,23 +446,23 @@ namespace AngryKoala.Pixelization
             float minValue = Mathf.Min(color1Value, color2Value);
 
             float darkness = Mathf.SmoothStep(0f, 1f, 1f - minValue);
-            
+
             float midSaturation = SmoothRamp(minSaturation, 0.15f, 0.30f);
             float midValue = SmoothRamp(minValue, 0.15f, 0.30f);
-            
+
             float vividness = minSaturation * minValue;
 
             float hueCurve = SmoothRamp(vividness, 0.35f, 0.85f);
 
             float hueDrive = Mathf.Clamp01(0.8f * (midSaturation * midValue) + 0.4f * hueCurve);
-            
+
             float hueWeight = Mathf.Lerp(0f, 4.0f, hueDrive);
             float saturationWeight = Mathf.Lerp(0.3f, 1.0f, minValue);
             float valueWeight = Mathf.Lerp(1.0f, 0.4f, minSaturation) * Mathf.Lerp(0.4f, 1.0f, minValue);
 
             float hueBrightnessBoost = SmoothRamp(vividness, 0.40f, 0.90f);
             hueWeight *= (1f + 2f * hueBrightnessBoost);
-            
+
             hueWeight *= (1f - darkness);
             saturationWeight *= (1f - 0.8f * darkness);
             valueWeight = Mathf.Lerp(valueWeight, 3.0f, darkness);
@@ -426,19 +476,19 @@ namespace AngryKoala.Pixelization
             float denominator = hueWeight * activeHueRange + saturationWeight * activeSaturationRange +
                                 valueWeight * activeValueRange;
 
-            if (denominator <= 1e-6f) 
+            if (denominator <= 1e-6f)
                 return 0f;
-        
+
             return Mathf.Clamp01(numerator / denominator);
         }
 
         private float SmoothRamp(float value, float edge0, float edge1)
         {
-            if (edge1 <= edge0) 
+            if (edge1 <= edge0)
                 return value >= edge1 ? 1f : 0f;
-        
+
             float step = Mathf.Clamp01((value - edge0) / (edge1 - edge0));
-        
+
             return step * step * (3f - 2f * step);
         }
 
