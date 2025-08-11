@@ -30,15 +30,6 @@ namespace AngryKoala.Pixelization
 
         [SerializeField] private ColorizationStyle _colorizationStyle;
 
-        private enum ReplacementStyle
-        {
-            ReplaceUsingHue,
-            ReplaceUsingSaturation,
-            ReplaceUsingValue
-        }
-
-        [SerializeField] private ReplacementStyle _replacementStyle;
-
         [SerializeField] private bool _useColorGroups;
 
         private List<Color> _colorGroupsColors = new();
@@ -136,8 +127,7 @@ namespace AngryKoala.Pixelization
                     case ColorizationStyle.Replace:
                         if (_useColorGroups)
                         {
-                            Color closestColor = GetClosestColor(_pixelizer.PixCollection[i].Color, _colorGroupsColors,
-                                _replacementStyle);
+                            Color closestColor = GetClosestColor(_pixelizer.PixCollection[i].Color, _colorGroupsColors);
 
                             _pixelizer.PixCollection[i].ColorIndex = _colorGroupsColors.IndexOf(closestColor);
                             _pixelizer.PixCollection[i].Color =
@@ -146,7 +136,7 @@ namespace AngryKoala.Pixelization
                         else
                         {
                             Color closestColor = GetClosestColor(_pixelizer.PixCollection[i].Color,
-                                _colorPalette.Colors, _replacementStyle);
+                                _colorPalette.Colors);
 
                             _pixelizer.PixCollection[i].Color = closestColor;
                         }
@@ -160,13 +150,13 @@ namespace AngryKoala.Pixelization
 
                         if (_useColorGroups)
                         {
-                            adjustedColor = GetClosestColor(originalColor, _colorGroupsColors, _replacementStyle);
+                            adjustedColor = GetClosestColor(originalColor, _colorGroupsColors);
                             _pixelizer.PixCollection[i].ColorIndex = _colorGroupsColors.IndexOf(adjustedColor);
                             adjustedColor = _sortedColorPaletteColors[_pixelizer.PixCollection[i].ColorIndex];
                         }
                         else
                         {
-                            adjustedColor = GetClosestColor(originalColor, _colorPalette.Colors, _replacementStyle);
+                            adjustedColor = GetClosestColor(originalColor, _colorPalette.Colors);
                         }
 
                         float hue, saturation, value;
@@ -174,7 +164,7 @@ namespace AngryKoala.Pixelization
 
                         float originalValue = originalColor.Value();
                         float originalSaturation = originalColor.Saturation();
-                        
+
                         adjustedColor = Color.HSVToRGB(hue, originalSaturation, originalValue);
 
                         _pixelizer.PixCollection[i].Color = adjustedColor;
@@ -187,7 +177,17 @@ namespace AngryKoala.Pixelization
             _pixelizer.Texturizer.SetVisualTexture();
         }
 
-        private Color GetClosestColor(Color color, List<Color> colorizerColors, ReplacementStyle replacementStyle)
+        /// <summary>
+        /// Finds the color from a provided list that is most similar to the specified target color,
+        /// using <see cref="GetColorDifference(Color, Color)"/> as the similarity metric.
+        /// </summary>
+        /// <param name="color">The target color to match.</param>
+        /// <param name="colorizerColors">The list of colors to search through.</param>
+        /// <returns>
+        /// The <see cref="Color"/> from <paramref name="colorizerColors"/> that has the smallest
+        /// perceptual difference to <paramref name="color"/>.
+        /// </returns>
+        private Color GetClosestColor(Color color, List<Color> colorizerColors)
         {
             float hue, saturation, value;
             Color.RGBToHSV(color, out hue, out saturation, out value);
@@ -196,64 +196,31 @@ namespace AngryKoala.Pixelization
 
             Color closestColor = Color.white;
 
-            switch (replacementStyle)
+            foreach (var colorizerColor in colorizerColors)
             {
-                case ReplacementStyle.ReplaceUsingHue:
-                    foreach (var colorizerColor in colorizerColors)
-                    {
-                        Vector3 colorHue = new Vector3(color.r, color.g, color.b);
-                        Vector3 colorizerColorHue = new Vector3(colorizerColor.r, colorizerColor.g, colorizerColor.b);
+                Vector3 colorHue = new Vector3(color.r, color.g, color.b);
+                Vector3 colorizerColorHue = new Vector3(colorizerColor.r, colorizerColor.g, colorizerColor.b);
 
-                        float difference = Vector3.Distance(colorHue, colorizerColorHue);
-
-                        if (difference < colorDifference)
-                        {
-                            closestColor = colorizerColor;
-                            colorDifference = difference;
-                        }
-                    }
-
-                    break;
-
-                case ReplacementStyle.ReplaceUsingSaturation:
-                    foreach (var colorizerColor in colorizerColors)
-                    {
-                        float colorizerHue, colorizerSaturation, colorizerValue;
-                        Color.RGBToHSV(colorizerColor, out colorizerHue, out colorizerSaturation, out colorizerValue);
-
-                        float difference = Mathf.Abs(saturation - colorizerSaturation);
-
-                        if (difference < colorDifference)
-                        {
-                            closestColor = colorizerColor;
-                            colorDifference = difference;
-                        }
-                    }
-
-                    break;
-                case ReplacementStyle.ReplaceUsingValue:
-                    foreach (var colorizerColor in colorizerColors)
-                    {
-                        float colorizerHue, colorizerSaturation, colorizerValue;
-                        Color.RGBToHSV(colorizerColor, out colorizerHue, out colorizerSaturation, out colorizerValue);
-
-                        float difference = Mathf.Abs(value - colorizerValue);
-
-                        if (difference < colorDifference)
-                        {
-                            closestColor = colorizerColor;
-                            colorDifference = difference;
-                        }
-                    }
-
-                    break;
+                float difference = GetColorDifference(colorizerColor, color);
+                
+                if (difference < colorDifference)
+                {
+                    closestColor = colorizerColor;
+                    colorDifference = difference;
+                }
             }
 
             return closestColor;
         }
 
         #region Color Palette
-
+        
+        /// <summary>
+        /// Generates a representative color palette of the specified size from the pixel data
+        /// in <c>PixCollection</c> using a k-means–like clustering algorithm.
+        /// </summary>
+        /// <param name="colorCount">The number of colors to include in the generated palette.</param>
+        /// <returns>A list of <see cref="Color"/> objects representing the final palette.</returns>
         private List<Color> GetColorPalette(int colorCount)
         {
             int iterationCount = 10;
@@ -406,19 +373,73 @@ namespace AngryKoala.Pixelization
             return colorPermutations;
         }
 
+        /// <summary>
+        /// Computes a perceptual difference between two colors in HSV space, normalized to [0,1].
+        /// The difference is calculated using weighted hue, saturation, and value distances,
+        /// where weights adapt dynamically. Hue influence increases for vivid mid-bright colors and decreases for 
+        /// dark or desaturated colors, while value influence increases in darker ranges.
+        /// </summary>
+        /// <param name="color1"></param>
+        /// <param name="color2"></param>
+        /// <returns>Returns 0 for identical colors and 1 for maximally different colors given these perceptual rules.</returns>
         private float GetColorDifference(Color color1, Color color2)
         {
-            switch (_replacementStyle)
-            {
-                case ReplacementStyle.ReplaceUsingHue:
-                    return color1.HueDifference(color2);
-                case ReplacementStyle.ReplaceUsingSaturation:
-                    return color1.SaturationDifference(color2);
-                case ReplacementStyle.ReplaceUsingValue:
-                    return color1.ValueDifference(color2);
-            }
+            Color.RGBToHSV(color1, out float color1Hue, out float color1Saturation, out float color1Value);
+            Color.RGBToHSV(color2, out float color2Hue, out float color2Saturation, out float color2Value);
 
-            return 0f;
+            float hueDifference = Mathf.Abs(color1Hue - color2Hue);
+            hueDifference = Mathf.Min(hueDifference, 1f - hueDifference) * 2f;
+            float saturationDifference = Mathf.Abs(color1Saturation - color2Saturation);
+            float valueDifference = Mathf.Abs(color1Value - color2Value);
+
+            float minSaturation = Mathf.Min(color1Saturation, color2Saturation);
+            float minValue = Mathf.Min(color1Value, color2Value);
+
+            float darkness = Mathf.SmoothStep(0f, 1f, 1f - minValue);
+            
+            float midSaturation = SmoothRamp(minSaturation, 0.15f, 0.30f);
+            float midValue = SmoothRamp(minValue, 0.15f, 0.30f);
+            
+            float vividness = minSaturation * minValue;
+
+            float hueCurve = SmoothRamp(vividness, 0.35f, 0.85f);
+
+            float hueDrive = Mathf.Clamp01(0.8f * (midSaturation * midValue) + 0.4f * hueCurve);
+            
+            float hueWeight = Mathf.Lerp(0f, 4.0f, hueDrive);
+            float saturationWeight = Mathf.Lerp(0.3f, 1.0f, minValue);
+            float valueWeight = Mathf.Lerp(1.0f, 0.4f, minSaturation) * Mathf.Lerp(0.4f, 1.0f, minValue);
+
+            float hueBrightnessBoost = SmoothRamp(vividness, 0.40f, 0.90f);
+            hueWeight *= (1f + 2f * hueBrightnessBoost);
+            
+            hueWeight *= (1f - darkness);
+            saturationWeight *= (1f - 0.8f * darkness);
+            valueWeight = Mathf.Lerp(valueWeight, 3.0f, darkness);
+
+            float activeHueRange = hueDifference > Mathf.Epsilon ? 1f : 0f;
+            float activeSaturationRange = saturationDifference > Mathf.Epsilon ? 1f : 0f;
+            float activeValueRange = valueDifference > Mathf.Epsilon ? 1f : 0f;
+
+            float numerator = hueWeight * hueDifference + saturationWeight * saturationDifference +
+                              valueWeight * valueDifference;
+            float denominator = hueWeight * activeHueRange + saturationWeight * activeSaturationRange +
+                                valueWeight * activeValueRange;
+
+            if (denominator <= 1e-6f) 
+                return 0f;
+        
+            return Mathf.Clamp01(numerator / denominator);
+        }
+
+        private float SmoothRamp(float value, float edge0, float edge1)
+        {
+            if (edge1 <= edge0) 
+                return value >= edge1 ? 1f : 0f;
+        
+            float step = Mathf.Clamp01((value - edge0) / (edge1 - edge0));
+        
+            return step * step * (3f - 2f * step);
         }
 
         #endregion
