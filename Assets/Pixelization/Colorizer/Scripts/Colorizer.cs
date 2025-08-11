@@ -334,6 +334,12 @@ namespace AngryKoala.Pixelization
         public void CreateNewColorPalette()
         {
 #if UNITY_EDITOR
+            if (_pixelizer.PixCollection == null)
+            {
+                Debug.LogWarning("Pixelize a texture first");
+                return;
+            }
+
             if (_newColorPaletteColorCount <= 0)
             {
                 Debug.LogWarning("Color palette color count must be greater than 0");
@@ -498,6 +504,12 @@ namespace AngryKoala.Pixelization
 
         public void ComplementColors()
         {
+            if (_pixelizer.PixCollection == null)
+            {
+                Debug.LogWarning("Pixelize a texture first");
+                return;
+            }
+
             foreach (var pix in _pixelizer.PixCollection)
             {
                 pix.ComplementColor();
@@ -509,6 +521,12 @@ namespace AngryKoala.Pixelization
 
         public void InvertColors()
         {
+            if (_pixelizer.PixCollection == null)
+            {
+                Debug.LogWarning("Pixelize a texture first");
+                return;
+            }
+
             foreach (var pix in _pixelizer.PixCollection)
             {
                 pix.InvertColor();
@@ -518,8 +536,14 @@ namespace AngryKoala.Pixelization
             _pixelizer.Texturizer.SetVisualTexture();
         }
 
-        public void ResetColors()
+        public bool ResetColors()
         {
+            if (_pixelizer.PixCollection == null)
+            {
+                Debug.LogWarning("Pixelize a texture first");
+                return false;
+            }
+
             foreach (var pix in _pixelizer.PixCollection)
             {
                 pix.ResetColor();
@@ -527,6 +551,8 @@ namespace AngryKoala.Pixelization
 
             _pixelizer.Texturizer.Texturize();
             _pixelizer.Texturizer.SetVisualTexture();
+
+            return true;
         }
 
         private void OnColorPaletteColorCountChanged()
