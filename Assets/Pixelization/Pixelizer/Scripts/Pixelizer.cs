@@ -101,8 +101,8 @@ namespace AngryKoala.Pixelization
 
             if (_sourceTexture != null)
             {
-                _width = Mathf.Clamp(_width, 1, _originalWidth);
-                _height = Mathf.Clamp(_height, 1, _originalHeight);
+                _width = Mathf.Clamp(_width, 1, _originalWidth <= 16384 ? _originalWidth : 16384);
+                _height = Mathf.Clamp(_height, 1, _originalHeight <= 16384 ? _originalHeight : 16384);
             }
             else
             {

@@ -146,6 +146,12 @@ namespace AngryKoala.Pixelization
                 return;
             }
 
+            if (_pixelizer.CurrentWidth * _pixSize > 16384 || _pixelizer.CurrentHeight * _pixSize > 16384)
+            {
+                Debug.LogWarning("Texture size exceeds maximum allowed size");
+                return;
+            }
+
             if (_newTexture != null && !saveTexture)
             {
                 DestroyImmediate(_newTexture);
