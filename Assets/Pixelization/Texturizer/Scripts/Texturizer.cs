@@ -18,22 +18,7 @@ namespace AngryKoala.Pixelization
 
         public Texture2D TexturizedTexture { get; set; }
 
-        private enum TexturizationStyle
-        {
-            PixSize,
-            CustomSize
-        }
-
-        [SerializeField] private TexturizationStyle _texturizationStyle;
-
-        [SerializeField] [ShowIf("_texturizationStyle", TexturizationStyle.PixSize)]
-        private int _pixSize;
-
-        [SerializeField] [ShowIf("_texturizationStyle", TexturizationStyle.CustomSize)]
-        private int _width;
-
-        [SerializeField] [ShowIf("_texturizationStyle", TexturizationStyle.CustomSize)]
-        private int _height;
+        [SerializeField] private int _pixSize;
 
         [SerializeField] private string _textureSavePath;
 
@@ -157,66 +142,25 @@ namespace AngryKoala.Pixelization
                 DestroyImmediate(_newTexture);
             }
 
-            if (_texturizationStyle == TexturizationStyle.PixSize)
+            _newTexture = new Texture2D(_pixelizer.CurrentWidth * _pixSize, _pixelizer.CurrentHeight * _pixSize,
+                TextureFormat.RGB24, false);
+
+            int pixIndex = 0;
+
+            for (int i = 0; i < _pixelizer.CurrentWidth; i++)
             {
-                _newTexture = new Texture2D(_pixelizer.CurrentWidth * _pixSize, _pixelizer.CurrentHeight * _pixSize,
-                    TextureFormat.RGB24, false);
-
-                int pixIndex = 0;
-
-                for (int i = 0; i < _pixelizer.CurrentWidth; i++)
+                for (int j = 0; j < _pixelizer.CurrentHeight; j++)
                 {
-                    for (int j = 0; j < _pixelizer.CurrentHeight; j++)
+                    Color[] pixColor = new Color[_pixSize * _pixSize];
+
+                    for (int k = 0; k < pixColor.Length; k++)
                     {
-                        Color[] pixColor = new Color[_pixSize * _pixSize];
-
-                        for (int k = 0; k < pixColor.Length; k++)
-                        {
-                            pixColor[k] = _pixelizer.PixCollection[pixIndex].Color;
-                        }
-
-                        _newTexture.SetPixels(i * _pixSize, j * _pixSize, _pixSize, _pixSize, pixColor);
-                        pixIndex++;
+                        pixColor[k] = _pixelizer.PixCollection[pixIndex].Color;
                     }
+
+                    _newTexture.SetPixels(i * _pixSize, j * _pixSize, _pixSize, _pixSize, pixColor);
+                    pixIndex++;
                 }
-            }
-
-            if (_texturizationStyle == TexturizationStyle.CustomSize)
-            {
-                _newTexture = new Texture2D(_pixelizer.CurrentWidth, _pixelizer.CurrentHeight, TextureFormat.RGB24,
-                    false);
-
-                int pixIndex = 0;
-
-                for (int i = 0; i < _pixelizer.CurrentWidth; i++)
-                {
-                    for (int j = 0; j < _pixelizer.CurrentHeight; j++)
-                    {
-                        Color[] pixColor = new Color[1];
-
-                        for (int k = 0; k < pixColor.Length; k++)
-                        {
-                            pixColor[k] = _pixelizer.PixCollection[pixIndex].Color;
-                        }
-
-                        _newTexture.SetPixels(i, j, 1, 1, pixColor);
-                        pixIndex++;
-                    }
-                }
-
-                Texture2D scaledTexture = new Texture2D(_width, _height, TextureFormat.RGB24, false);
-                _newTexture.wrapMode = TextureWrapMode.Clamp;
-
-                for (int i = 0; i < _width; i++)
-                {
-                    for (int j = 0; j < _height; j++)
-                    {
-                        Color color = _newTexture.GetPixelBilinear((float)i / _width, (float)j / _height);
-                        scaledTexture.SetPixel(i, j, color);
-                    }
-                }
-
-                _newTexture = scaledTexture;
             }
 
 #if UNITY_EDITOR
@@ -232,12 +176,6 @@ namespace AngryKoala.Pixelization
 
                 TexturizedTexture = _newTexture;
             }
-        }
-
-        private void OnValidate()
-        {
-            _width = Mathf.Max(_width, 1);
-            _height = Mathf.Max(_height, 1);
         }
     }
 }
