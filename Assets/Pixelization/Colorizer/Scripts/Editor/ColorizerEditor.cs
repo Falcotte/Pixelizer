@@ -22,13 +22,10 @@ namespace AngryKoala.Pixelization
 
             if (GUILayout.Button("Colorize"))
             {
-                _colorizer.Colorize();
-            }
-
-            if (GUILayout.Button("Recolorize"))
-            {
-                _colorizer.ResetColors();
-                _colorizer.Colorize();
+                if (_colorizer.ResetColors())
+                {
+                    _colorizer.Colorize();
+                }
             }
 
             if (GUILayout.Button("Create New Color Palette"))
@@ -40,9 +37,15 @@ namespace AngryKoala.Pixelization
             {
                 _colorizer.SaveColorPalette();
             }
-            
-            if(GUILayout.Button("Clear Color Palette"))
+
+            if (GUILayout.Button("Clear Color Palette"))
             {
+                if (_colorizer.ColorPalette == null)
+                {
+                    Debug.LogWarning("Color palette is not assigned");
+                    return;
+                }
+
                 _colorizer.ColorPalette.Colors.Clear();
             }
 

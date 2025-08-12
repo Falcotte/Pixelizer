@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using NaughtyAttributes;
 using UnityEngine;
@@ -33,7 +34,6 @@ namespace AngryKoala.Pixelization
 
         [SerializeField] [ShowIf("_useValueRamp")] [Range(2, 10)]
         private int _rampCount = 2;
-
 
         private List<Color> _colorGroupsColors = new();
         private List<Color> _sortedColorPaletteColors = new();
@@ -334,6 +334,12 @@ namespace AngryKoala.Pixelization
         public void CreateNewColorPalette()
         {
 #if UNITY_EDITOR
+            if (_pixelizer.PixCollection == null)
+            {
+                Debug.LogWarning("Pixelize a texture first");
+                return;
+            }
+
             if (_newColorPaletteColorCount <= 0)
             {
                 Debug.LogWarning("Color palette color count must be greater than 0");
@@ -366,7 +372,19 @@ namespace AngryKoala.Pixelization
                 UnityEditor.AssetDatabase.GenerateUniqueAssetPath(
                     "Assets/Pixelization/Colorizer/ScriptableObjects/ColorPalette_.asset");
 
-            UnityEditor.AssetDatabase.CreateAsset(_colorPalette, path);
+            ColorPalette colorPalette = UnityEditor.AssetDatabase.Contains(_colorPalette)
+                ? Instantiate(_colorPalette)
+                : _colorPalette;
+
+            colorPalette.name = Path.GetFileNameWithoutExtension(path);
+
+            UnityEditor.AssetDatabase.CreateAsset(colorPalette, path);
+            UnityEditor.AssetDatabase.SaveAssets();
+            UnityEditor.AssetDatabase.Refresh(UnityEditor.ImportAssetOptions.ForceUpdate);
+            
+            Debug.Log($"Color palette saved as {colorPalette.name}");
+            
+            UnityEditor.EditorGUIUtility.PingObject(colorPalette);
 #endif
         }
 
@@ -498,6 +516,12 @@ namespace AngryKoala.Pixelization
 
         public void ComplementColors()
         {
+            if (_pixelizer.PixCollection == null)
+            {
+                Debug.LogWarning("Pixelize a texture first");
+                return;
+            }
+
             foreach (var pix in _pixelizer.PixCollection)
             {
                 pix.ComplementColor();
@@ -509,6 +533,12 @@ namespace AngryKoala.Pixelization
 
         public void InvertColors()
         {
+            if (_pixelizer.PixCollection == null)
+            {
+                Debug.LogWarning("Pixelize a texture first");
+                return;
+            }
+
             foreach (var pix in _pixelizer.PixCollection)
             {
                 pix.InvertColor();
@@ -518,8 +548,14 @@ namespace AngryKoala.Pixelization
             _pixelizer.Texturizer.SetVisualTexture();
         }
 
-        public void ResetColors()
+        public bool ResetColors()
         {
+            if (_pixelizer.PixCollection == null)
+            {
+                Debug.LogWarning("Pixelize a texture first");
+                return false;
+            }
+
             foreach (var pix in _pixelizer.PixCollection)
             {
                 pix.ResetColor();
@@ -527,6 +563,8 @@ namespace AngryKoala.Pixelization
 
             _pixelizer.Texturizer.Texturize();
             _pixelizer.Texturizer.SetVisualTexture();
+
+            return true;
         }
 
         private void OnColorPaletteColorCountChanged()
