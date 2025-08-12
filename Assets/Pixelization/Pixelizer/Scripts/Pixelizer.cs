@@ -45,8 +45,6 @@ namespace AngryKoala.Pixelization
         [OnValueChanged("PreserveRatio")]
         private bool _preserveRatio;
 
-        [SerializeField] private float _pixSize;
-
         private Pix[] _pixCollection;
         public Pix[] PixCollection => _pixCollection;
 
@@ -91,15 +89,13 @@ namespace AngryKoala.Pixelization
                 }
             }
 
-            _texturizer.SetVisualSize(_width, _height, _pixSize);
+            _texturizer.SetVisualSize(_width, _height);
         }
 
         #region Validation
 
         private void OnValidate()
         {
-            _pixSize = Mathf.Max(_pixSize, Mathf.Epsilon);
-
             _originalWidth = _sourceTexture != null ? _sourceTexture.width : 0;
             _originalHeight = _sourceTexture != null ? _sourceTexture.height : 0;
 

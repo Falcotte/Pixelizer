@@ -53,16 +53,16 @@ namespace AngryKoala.Pixelization
             _visual.sharedMaterial = new Material(Shader.Find("Unlit/Texture"));
         }
 
-        public void SetVisualSize(int width, int height, float pixSize)
+        public void SetVisualSize(int width, int height)
         {
             if (_visual == null)
             {
                 CreateVisual();
             }
 
-            _visual.transform.localScale = new Vector3(pixSize * width, pixSize * height, 1f);
+            _visual.transform.localScale = new Vector3(width, height, 1f);
 
-            VisualSizeUpdated?.Invoke(pixSize * width, pixSize * height);
+            VisualSizeUpdated?.Invoke(width, height);
         }
 
         public void SetVisualTexture()
@@ -112,7 +112,7 @@ namespace AngryKoala.Pixelization
 
             if (!AssetDatabase.IsValidFolder(_textureSavePath))
             {
-                if(!CreateFolderAtSavePath(_textureSavePath))
+                if (!CreateFolderAtSavePath(_textureSavePath))
                     return;
             }
 
