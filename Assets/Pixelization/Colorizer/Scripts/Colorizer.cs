@@ -32,8 +32,11 @@ namespace AngryKoala.Pixelization
 
         [SerializeField] private bool _useValueRamp;
 
-        [SerializeField] [ShowIf("_useValueRamp")] [Range(2, 10)]
-        private int _rampCount = 2;
+        [SerializeField] [ShowIf("_useValueRamp")] [OnValueChanged("AdjustValueRampCurve")] [Range(2, 10)]
+        private int _stepCount = 2;
+
+        [SerializeField] [ShowIf("_useValueRamp")]
+        private AnimationCurve _valueRampCurve;
 
         private List<Color> _colorGroupsColors = new();
         private List<Color> _sortedColorPaletteColors = new();
@@ -129,7 +132,7 @@ namespace AngryKoala.Pixelization
 
                 if (_useValueRamp)
                 {
-                    rampValue = SnapToNearestRamp(_pixelizer.PixCollection[i].Color.Value(), _rampCount);
+                    rampValue = _valueRampCurve.Evaluate(_pixelizer.PixCollection[i].Color.Value());
                 }
 
                 switch (_colorizationStyle)
@@ -255,12 +258,38 @@ namespace AngryKoala.Pixelization
             return closestColor;
         }
 
-        private float SnapToNearestRamp(float value, int rampCount)
+        private void AdjustValueRampCurve()
         {
-            float step = 1f / (rampCount - 1);
-            int rampIndex = (int)Mathf.Round(value / step);
+            var keys = new Keyframe[_stepCount + 1];
 
-            return rampIndex * step;
+            for (int i = 0; i < _stepCount; i++)
+            {
+                float time = i / (float)_stepCount;
+                float value = i / (_stepCount - 1f);
+                keys[i] = new Keyframe(time, value, 0f, 0f);
+            }
+
+            keys[_stepCount] = new Keyframe(1f, 1f, 0f, 0f);
+
+            _valueRampCurve.keys = keys;
+            _valueRampCurve.preWrapMode = WrapMode.ClampForever;
+            _valueRampCurve.postWrapMode = WrapMode.ClampForever;
+
+#if UNITY_EDITOR
+            for (int i = 0; i < _valueRampCurve.length; i++)
+            {
+                var keyframe = _valueRampCurve[i];
+                keyframe.inTangent = 0f;
+                keyframe.outTangent = 0f;
+                _valueRampCurve.MoveKey(i, keyframe);
+
+                UnityEditor.AnimationUtility.SetKeyBroken(_valueRampCurve, i, true);
+                UnityEditor.AnimationUtility.SetKeyLeftTangentMode(_valueRampCurve, i,
+                    UnityEditor.AnimationUtility.TangentMode.Constant);
+                UnityEditor.AnimationUtility.SetKeyRightTangentMode(_valueRampCurve, i,
+                    UnityEditor.AnimationUtility.TangentMode.Constant);
+            }
+#endif
         }
 
         #region Color Palette
@@ -381,9 +410,9 @@ namespace AngryKoala.Pixelization
             UnityEditor.AssetDatabase.CreateAsset(colorPalette, path);
             UnityEditor.AssetDatabase.SaveAssets();
             UnityEditor.AssetDatabase.Refresh(UnityEditor.ImportAssetOptions.ForceUpdate);
-            
+
             Debug.Log($"Color palette saved as {colorPalette.name}");
-            
+
             UnityEditor.EditorGUIUtility.PingObject(colorPalette);
 #endif
         }
