@@ -91,14 +91,18 @@ namespace AngryKoala.Pixelization
             return true;
         }
 
-        private void SaveTexture(string customSavePath = "")
+        public void SaveTexture()
         {
-            _textureSavePath = string.IsNullOrEmpty(customSavePath) ? _textureSavePath : customSavePath;
-
             if (!AssetDatabase.IsValidFolder(_textureSavePath))
             {
                 if (!CreateFolderAtSavePath(_textureSavePath))
                     return;
+            }
+
+            if (_newTexture == null)
+            {
+                Debug.LogWarning("Pixelize a texture first");
+                return;
             }
             
 #if BENCHMARK
@@ -132,7 +136,7 @@ namespace AngryKoala.Pixelization
 #endif
         }
 
-        public void Texturize(bool saveTexture = false, string customSavePath = "")
+        public void Texturize()
         {
             if (_pixelizer.PixCollection == null || _pixelizer.PixCollection.Length == 0)
             {
@@ -150,7 +154,7 @@ namespace AngryKoala.Pixelization
             System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
 #endif
 
-            if (_newTexture != null && !saveTexture)
+            if (_newTexture != null)
             {
                 DestroyImmediate(_newTexture);
             }
@@ -176,19 +180,10 @@ namespace AngryKoala.Pixelization
                 }
             }
 
-#if UNITY_EDITOR
-            if (saveTexture)
-            {
-                SaveTexture(customSavePath);
-            }
-#endif
-            if (!saveTexture)
-            {
-                _newTexture.filterMode = FilterMode.Point;
-                _newTexture.Apply();
+            _newTexture.filterMode = FilterMode.Point;
+            _newTexture.Apply();
 
-                TexturizedTexture = _newTexture;
-            }
+            TexturizedTexture = _newTexture;
             
 #if BENCHMARK
             stopwatch.Stop();
