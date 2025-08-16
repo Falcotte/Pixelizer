@@ -100,6 +100,10 @@ namespace AngryKoala.Pixelization
                 if (!CreateFolderAtSavePath(_textureSavePath))
                     return;
             }
+            
+#if BENCHMARK
+            System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+#endif
 
             string path = AssetDatabase.GenerateUniqueAssetPath($"{_textureSavePath}/Texture_.png");
 
@@ -121,6 +125,11 @@ namespace AngryKoala.Pixelization
 
             EditorUtility.SetDirty(importer);
             importer.SaveAndReimport();
+            
+#if BENCHMARK
+            stopwatch.Stop();
+            Debug.Log($"SaveTexture took {stopwatch.ElapsedMilliseconds} ms");
+#endif
         }
 
         public void Texturize(bool saveTexture = false, string customSavePath = "")
@@ -136,6 +145,10 @@ namespace AngryKoala.Pixelization
                 Debug.LogWarning("Texture size exceeds maximum allowed size");
                 return;
             }
+            
+#if BENCHMARK
+            System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+#endif
 
             if (_newTexture != null && !saveTexture)
             {
@@ -176,6 +189,11 @@ namespace AngryKoala.Pixelization
 
                 TexturizedTexture = _newTexture;
             }
+            
+#if BENCHMARK
+            stopwatch.Stop();
+            Debug.Log($"Texturization took {stopwatch.ElapsedMilliseconds} ms");
+#endif
         }
     }
 }

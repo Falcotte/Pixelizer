@@ -43,6 +43,10 @@ namespace AngryKoala.Pixelization
 
         public void SetPixColors(Texture2D sourceTexture, int width, int height)
         {
+#if BENCHMARK
+            System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+#endif
+
             float textureAreaX = (float)sourceTexture.width / width;
             float textureAreaY = (float)sourceTexture.height / height;
 
@@ -55,6 +59,11 @@ namespace AngryKoala.Pixelization
                 _pixelizer.PixCollection[i].OriginalColor = color;
                 _pixelizer.PixCollection[i].Color = color;
             }
+
+#if BENCHMARK
+            stopwatch.Stop();
+            Debug.Log($"SetPixColors took {stopwatch.ElapsedMilliseconds} ms");
+#endif
         }
 
         private Color GetAverageColor(Color[] colors)
@@ -85,6 +94,10 @@ namespace AngryKoala.Pixelization
                 return;
             }
 
+#if BENCHMARK
+            System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+#endif
+
             if (_createNewColorPaletteOnColorize)
             {
                 ColorPalette newColorPalette = ScriptableObject.CreateInstance<ColorPalette>();
@@ -107,12 +120,20 @@ namespace AngryKoala.Pixelization
             if (_colorPalette == null)
             {
                 Debug.LogWarning("Color palette is not assigned");
+
+#if BENCHMARK
+                stopwatch.Stop();
+#endif
                 return;
             }
 
             if (_colorPalette.Colors.Count == 0)
             {
                 Debug.LogWarning("No colors selected");
+                
+#if BENCHMARK
+                stopwatch.Stop();
+#endif
                 return;
             }
 
@@ -218,6 +239,11 @@ namespace AngryKoala.Pixelization
                 }
             }
 
+#if BENCHMARK
+            stopwatch.Stop();
+            Debug.Log($"Colorization took {stopwatch.ElapsedMilliseconds} ms");
+#endif
+
             _pixelizer.Texturizer.Texturize();
             _pixelizer.Texturizer.SetVisualTexture();
         }
@@ -302,6 +328,10 @@ namespace AngryKoala.Pixelization
         /// <returns>A list of <see cref="Color"/> objects representing the final palette.</returns>
         private List<Color> GetColorPalette(int colorCount)
         {
+#if BENCHMARK
+            System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+#endif
+
             int iterationCount = 10;
 
             List<Color> pixels = new List<Color>();
@@ -356,6 +386,11 @@ namespace AngryKoala.Pixelization
                     }
                 }
             }
+
+#if BENCHMARK
+            stopwatch.Stop();
+            Debug.Log($"GetColorPalette took {stopwatch.ElapsedMilliseconds} ms");
+#endif
 
             return centroids.ToList();
         }
@@ -595,7 +630,7 @@ namespace AngryKoala.Pixelization
                 _pixelizer.Texturizer.Texturize();
                 _pixelizer.Texturizer.SetVisualTexture();
             }
-            
+
             return true;
         }
 

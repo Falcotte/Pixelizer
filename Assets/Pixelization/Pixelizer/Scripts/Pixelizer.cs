@@ -59,16 +59,29 @@ namespace AngryKoala.Pixelization
                 return;
             }
 
+#if BENCHMARK
+            System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+#endif
+
             CreateGrid();
 
             _colorizer.SetPixColors(_sourceTexture, _currentWidth, _currentHeight);
 
             _texturizer.Texturize();
             _texturizer.SetVisualTexture();
+
+#if BENCHMARK
+            stopwatch.Stop();
+            Debug.Log($"Pixelization took {stopwatch.ElapsedMilliseconds} ms");
+#endif
         }
 
         private void CreateGrid()
         {
+#if BENCHMARK
+            System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+#endif
+            
             _currentWidth = _width;
             _currentHeight = _height;
 
@@ -90,6 +103,11 @@ namespace AngryKoala.Pixelization
             }
 
             _texturizer.SetVisualSize(_width, _height);
+            
+#if BENCHMARK
+            stopwatch.Stop();
+            Debug.Log($"CreateGrid took {stopwatch.ElapsedMilliseconds} ms");
+#endif
         }
 
         #region Validation
