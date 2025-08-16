@@ -341,7 +341,7 @@ namespace AngryKoala.Pixelization
 
                 for (int sourceRowIndex = 0; sourceRowIndex < SourceHeight; sourceRowIndex++)
                 {
-                    int sourceIndex = (sourceColumnIndex * SourceHeight) + sourceRowIndex;
+                    int sourceIndex = (sourceRowIndex * SourceWidth) + sourceColumnIndex;
                     Color32 color = Source[sourceIndex];
                     int blockStartY = sourceRowIndex * PixSize;
 

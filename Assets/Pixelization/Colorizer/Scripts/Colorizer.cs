@@ -2,6 +2,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using NaughtyAttributes;
+using Unity.Burst;
+using Unity.Collections;
+using Unity.Jobs;
 using UnityEngine;
 
 namespace AngryKoala.Pixelization
@@ -40,22 +43,53 @@ namespace AngryKoala.Pixelization
 
         private List<Color> _colorGroupsColors = new();
         private List<Color> _sortedColorPaletteColors = new();
+        
+        private NativeArray<Color> _sourceNativeArray;
+        private NativeArray<Color> _blockColorsNativeArray;
 
-        public void SetPixColors(Texture2D sourceTexture, int width, int height)
+        private int _cachedSourceWidth = -1;
+        private int _cachedSourceHeight = -1;
+        private int _cachedBlockWidth = -1;
+        private int _cachedBlockHeight = -1;
+
+        private void OnDisable() => DisposeBuffers();
+        private void OnDestroy() => DisposeBuffers();
+
+        public void SetPixColors(Texture2D sourceTexture, int blockWidth, int blockHeight)
         {
 #if BENCHMARK
             System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
 #endif
 
-            float textureAreaX = (float)sourceTexture.width / width;
-            float textureAreaY = (float)sourceTexture.height / height;
+            int sourceWidth = sourceTexture.width;
+            int sourceHeight = sourceTexture.height;
 
-            for (int i = 0; i < width * height; i++)
+            EnsureBuffers(sourceWidth, sourceHeight, blockWidth, blockHeight);
+
+            if (!_sourceNativeArray.IsCreated || !_blockColorsNativeArray.IsCreated)
             {
-                Color color = GetAverageColor(sourceTexture.GetPixels(Mathf.FloorToInt((i / height) * textureAreaX),
-                    Mathf.FloorToInt(i % height * textureAreaY), Mathf.FloorToInt(textureAreaX),
-                    Mathf.FloorToInt(textureAreaY)));
+                return;
+            }
 
+            Color[] sourcePixelsManaged = sourceTexture.GetPixels();
+            _sourceNativeArray.CopyFrom(sourcePixelsManaged);
+
+            var job = new AverageColorJob
+            {
+                SourcePixels = _sourceNativeArray,
+                BlockColors = _blockColorsNativeArray,
+                SourceWidth = sourceWidth,
+                SourceHeight = sourceHeight,
+                BlockWidth = blockWidth,
+                BlockHeight = blockHeight
+            };
+
+            JobHandle jobHandle = job.Schedule(blockWidth * blockHeight, 64);
+            jobHandle.Complete();
+
+            for (int i = 0; i < _blockColorsNativeArray.Length; i++)
+            {
+                Color color = _blockColorsNativeArray[i];
                 _pixelizer.PixCollection[i].OriginalColor = color;
                 _pixelizer.PixCollection[i].Color = color;
             }
@@ -64,26 +98,6 @@ namespace AngryKoala.Pixelization
             stopwatch.Stop();
             Debug.Log($"SetPixColors took {stopwatch.ElapsedMilliseconds} ms");
 #endif
-        }
-
-        private Color GetAverageColor(Color[] colors)
-        {
-            float r = 0f;
-            float g = 0f;
-            float b = 0f;
-
-            for (int i = 0; i < colors.Length; i++)
-            {
-                r += colors[i].r;
-                g += colors[i].g;
-                b += colors[i].b;
-            }
-
-            r /= colors.Length;
-            g /= colors.Length;
-            b /= colors.Length;
-
-            return new Color(r, g, b);
         }
 
         public void Colorize()
@@ -316,6 +330,99 @@ namespace AngryKoala.Pixelization
                     UnityEditor.AnimationUtility.TangentMode.Constant);
             }
 #endif
+        }
+        
+        private void EnsureBuffers(int sourceWidth, int sourceHeight, int blockWidth, int blockHeight)
+        {
+            bool sourceChanged = (sourceWidth != _cachedSourceWidth) || (sourceHeight != _cachedSourceHeight);
+            bool blockChanged = (blockWidth != _cachedBlockWidth) || (blockHeight != _cachedBlockHeight);
+
+            if (sourceChanged || !_sourceNativeArray.IsCreated)
+            {
+                if (_sourceNativeArray.IsCreated)
+                {
+                    _sourceNativeArray.Dispose();
+                }
+
+                if (sourceWidth > 0 && sourceHeight > 0)
+                {
+                    _sourceNativeArray = new NativeArray<Color>(sourceWidth * sourceHeight, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+                }
+            }
+
+            if (blockChanged || !_blockColorsNativeArray.IsCreated)
+            {
+                if (_blockColorsNativeArray.IsCreated)
+                {
+                    _blockColorsNativeArray.Dispose();
+                }
+
+                if (blockWidth > 0 && blockHeight > 0)
+                {
+                    _blockColorsNativeArray = new NativeArray<Color>(blockWidth * blockHeight, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+                }
+            }
+
+            _cachedSourceWidth = sourceWidth;
+            _cachedSourceHeight = sourceHeight;
+            _cachedBlockWidth = blockWidth;
+            _cachedBlockHeight = blockHeight;
+        }
+
+        [BurstCompile(FloatMode = FloatMode.Fast, CompileSynchronously = true)]
+        private struct AverageColorJob : IJobParallelFor
+        {
+            [Unity.Collections.ReadOnly] public NativeArray<Color> SourcePixels;
+
+            [NativeDisableParallelForRestriction] public NativeArray<Color> BlockColors;
+
+            public int SourceWidth;
+            public int SourceHeight;
+            public int BlockWidth;
+            public int BlockHeight;
+
+            public void Execute(int index)
+            {
+                int blockX = index % BlockWidth;
+                int blockY = index / BlockWidth;
+
+                int startX = Mathf.FloorToInt(blockX * (float)SourceWidth / BlockWidth);
+                int startY = Mathf.FloorToInt(blockY * (float)SourceHeight / BlockHeight);
+                int sizeX = Mathf.FloorToInt((float)SourceWidth / BlockWidth);
+                int sizeY = Mathf.FloorToInt((float)SourceHeight / BlockHeight);
+
+                float r = 0f, g = 0f, b = 0f;
+                int count = 0;
+
+                for (int y = 0; y < sizeY; y++)
+                {
+                    int rowStart = (startY + y) * SourceWidth + startX;
+
+                    for (int x = 0; x < sizeX; x++)
+                    {
+                        Color c = SourcePixels[rowStart + x];
+                        r += c.r;
+                        g += c.g;
+                        b += c.b;
+                        count++;
+                    }
+                }
+
+                BlockColors[index] = new Color(r / count, g / count, b / count);
+            }
+        }
+
+        private void DisposeBuffers()
+        {
+            if (_sourceNativeArray.IsCreated)
+            {
+                _sourceNativeArray.Dispose();
+            }
+
+            if (_blockColorsNativeArray.IsCreated)
+            {
+                _blockColorsNativeArray.Dispose();
+            }
         }
 
         #region Color Palette

@@ -81,16 +81,16 @@ namespace AngryKoala.Pixelization
 #if BENCHMARK
             System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
 #endif
-            
+
             _currentWidth = _width;
             _currentHeight = _height;
 
             _pixCollection = new Pix[_width * _height];
             int pixIndex = 0;
 
-            for (int i = 0; i < _width; i++)
+            for (int j = 0; j < _height; j++)
             {
-                for (int j = 0; j < _height; j++)
+                for (int i = 0; i < _width; i++)
                 {
                     Pix pix = new();
 
@@ -103,7 +103,7 @@ namespace AngryKoala.Pixelization
             }
 
             _texturizer.SetVisualSize(_width, _height);
-            
+
 #if BENCHMARK
             stopwatch.Stop();
             Debug.Log($"CreateGrid took {stopwatch.ElapsedMilliseconds} ms");
