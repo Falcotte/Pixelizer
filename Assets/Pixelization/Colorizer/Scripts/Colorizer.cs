@@ -577,7 +577,7 @@ namespace AngryKoala.Pixelization
             _pixelizer.Texturizer.SetVisualTexture();
         }
 
-        public bool ResetColors()
+        public bool ResetColors(bool texturize = false)
         {
             if (_pixelizer.PixCollection == null)
             {
@@ -590,9 +590,12 @@ namespace AngryKoala.Pixelization
                 pix.ResetColor();
             }
 
-            _pixelizer.Texturizer.Texturize();
-            _pixelizer.Texturizer.SetVisualTexture();
-
+            if (texturize)
+            {
+                _pixelizer.Texturizer.Texturize();
+                _pixelizer.Texturizer.SetVisualTexture();
+            }
+            
             return true;
         }
 
