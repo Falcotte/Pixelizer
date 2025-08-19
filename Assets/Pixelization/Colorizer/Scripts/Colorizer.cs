@@ -4,6 +4,7 @@ using System.Linq;
 using NaughtyAttributes;
 using Unity.Burst;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
@@ -461,65 +462,225 @@ namespace AngryKoala.Pixelization
 
             int iterationCount = 10;
 
-            List<Color> pixels = new List<Color>();
-            foreach (var pix in _pixelizer.PixCollection)
+            int pixCount = _pixelizer.PixCollection.Length;
+
+            var pixColors = new NativeArray<float3>(pixCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+            
+            for (int i = 0; i < pixCount; i++)
             {
-                pixels.Add(pix.Color);
+                var color = _pixelizer.PixCollection[i].Color;
+                pixColors[i] = new float3(color.r, color.g, color.b);
             }
+            
+            var centroids = new NativeArray<float3>(colorCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
 
-            int pixelCount = pixels.Count;
-
-            Color[] centroids = new Color[colorCount];
             for (int i = 0; i < colorCount; i++)
             {
-                centroids[i] = pixels[Random.Range(0, pixelCount)];
+                var pixColor = _pixelizer.PixCollection[Random.Range(0, pixCount)].Color;
+                centroids[i] =  new float3(pixColor.r, pixColor.g, pixColor.b);
             }
+            
+            var assignments = new NativeArray<int>(pixCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
 
+            int workerCount = math.max(1, Unity.Jobs.LowLevel.Unsafe.JobsUtility.JobWorkerCount);
+            int lanes = workerCount + 1;
+            int laneStride = colorCount;
+            
+            var partialSums = new NativeArray<float3>(lanes * laneStride, Allocator.TempJob, NativeArrayOptions.ClearMemory);
+            var partialCounts = new NativeArray<int>(lanes * laneStride, Allocator.TempJob, NativeArrayOptions.ClearMemory);
+
+            var reducedSums = new NativeArray<float3>(colorCount, Allocator.TempJob, NativeArrayOptions.ClearMemory);
+            var reducedCounts = new NativeArray<int>(colorCount, Allocator.TempJob, NativeArrayOptions.ClearMemory);
+            
             for (int i = 0; i < iterationCount; i++)
             {
-                int[] nearestCentroidIndices = new int[pixelCount];
-
-                for (int j = 0; j < pixelCount; j++)
+                var assignJob = new AssignNearestCentroidJob
                 {
-                    float nearestDistance = float.MaxValue;
-                    int nearestCentroidIndex = 0;
-                    for (int k = 0; k < colorCount; k++)
-                    {
-                        Vector3 colorA = new Vector3(pixels[j].r, pixels[j].g, pixels[j].b);
-                        Vector3 colorB = new Vector3(centroids[k].r, centroids[k].g, centroids[k].b);
-
-                        float distance = Vector3.Distance(colorA, colorB);
-                        if (distance < nearestDistance)
-                        {
-                            nearestDistance = distance;
-                            nearestCentroidIndex = k;
-                        }
-                    }
-
-                    nearestCentroidIndices[j] = nearestCentroidIndex;
-                }
-
-                for (int j = 0; j < colorCount; j++)
+                    PixColors = pixColors,
+                    Centroids = centroids,
+                    Assignments = assignments
+                };
+                
+                JobHandle assignHandle = assignJob.Schedule(pixCount, 128);
+                
+                var clearJob = new ClearPartialsJob
                 {
-                    var pixelsInCluster =
-                        from pixelIndex in Enumerable.Range(0, pixelCount)
-                        where nearestCentroidIndices[pixelIndex] == j
-                        select pixels[pixelIndex];
+                    PartialSums = partialSums,
+                    PartialCounts = partialCounts
+                };
+                JobHandle clearHandle = clearJob.Schedule(lanes * laneStride, 128, assignHandle);
+                
+                var accumulateJob = new AccumulatePerThreadJob
+                {
+                    PixColors = pixColors,
+                    Assignments = assignments,
+                    LaneStride = laneStride,
+                    PartialSums = partialSums,
+                    PartialCounts = partialCounts
+                };
+                JobHandle accumulateHandle = accumulateJob.Schedule(pixCount, 128, clearHandle);
+                
+                var reduceJob = new ReduceCentroidsJob
+                {
+                    Lanes = lanes,
+                    LaneStride = laneStride,
+                    PartialSums = partialSums,
+                    PartialCounts = partialCounts,
+                    OutSums = reducedSums,
+                    OutCounts = reducedCounts
+                };
+                JobHandle reduceHandle = reduceJob.Schedule(colorCount, 64, accumulateHandle);
+                
+                var updateJob = new UpdateCentroidsJob
+                {
+                    Sums = reducedSums,
+                    Counts = reducedCounts,
+                    Centroids = centroids
+                };
+                JobHandle updateHandle = updateJob.Schedule(colorCount, 64, reduceHandle);
 
-                    if (pixelsInCluster.Any())
-                    {
-                        centroids[j] = new Color(pixelsInCluster.Average(c => c.r), pixelsInCluster.Average(c => c.g),
-                            pixelsInCluster.Average(c => c.b));
-                    }
-                }
+                updateHandle.Complete();
             }
+            
+            var colorPalette = new List<Color>(colorCount);
+            
+            for (int i = 0; i < colorCount; i++)
+            {
+                var color = centroids[i];
+                colorPalette.Add(new Color(color.x, color.y, color.z, 1f));
+            }
+            
+            pixColors.Dispose();
+            centroids.Dispose();
+            assignments.Dispose();
+            partialSums.Dispose();
+            partialCounts.Dispose();
+            reducedSums.Dispose();
+            reducedCounts.Dispose();
 
 #if BENCHMARK
             stopwatch.Stop();
             Debug.Log($"GetColorPalette took {stopwatch.ElapsedMilliseconds} ms");
 #endif
 
-            return centroids.ToList();
+            return colorPalette;
+        }
+        
+        [BurstCompile]
+        private struct AssignNearestCentroidJob : IJobParallelFor
+        {
+            [Unity.Collections.ReadOnly] public NativeArray<float3> PixColors;
+            [Unity.Collections.ReadOnly] public NativeArray<float3> Centroids;
+            
+            [WriteOnly] public NativeArray<int> Assignments;
+
+            public void Execute(int index)
+            {
+                float3 pixColor = PixColors[index];
+                
+                float bestDistance = float.MaxValue;
+                int bestIndex = 0;
+
+                // Euclidean in RGB
+                for (int i = 0; i < Centroids.Length; i++)
+                {
+                    float3 difference = pixColor - Centroids[i];
+                    
+                    float distance = math.lengthsq(difference);
+                    if (distance < bestDistance)
+                    {
+                        bestDistance = distance;
+                        bestIndex = i;
+                    }
+                }
+                Assignments[index] = bestIndex;
+            }
+        }
+        
+        [BurstCompile]
+        private struct ClearPartialsJob : IJobParallelFor
+        {
+            public NativeArray<float3> PartialSums;
+            public NativeArray<int> PartialCounts;
+
+            public void Execute(int index)
+            {
+                PartialSums[index] = float3.zero;
+                PartialCounts[index] = 0;
+            }
+        }
+        
+        [BurstCompile]
+        private struct AccumulatePerThreadJob : IJobParallelFor
+        {
+            [Unity.Collections.ReadOnly] public NativeArray<float3> PixColors;
+            [Unity.Collections.ReadOnly] public NativeArray<int> Assignments;
+
+            public int LaneStride;
+
+            [NativeDisableParallelForRestriction] public NativeArray<float3> PartialSums;
+            [NativeDisableParallelForRestriction] public NativeArray<int> PartialCounts;
+
+            [NativeSetThreadIndex] private int _threadIndex;
+
+            public void Execute(int index)
+            {
+                int assignment = Assignments[index];
+                float3 pixColor = PixColors[index];
+                
+                int lane = (_threadIndex <= 0) ? 0 : (_threadIndex - 1);
+                int baseIdx = lane * LaneStride + assignment;
+                
+                PartialSums[baseIdx] += pixColor;
+                PartialCounts[baseIdx] += 1;
+            }
+        }
+        
+        [BurstCompile]
+        private struct ReduceCentroidsJob : IJobParallelFor
+        {
+            [Unity.Collections.ReadOnly] public int Lanes;
+            [Unity.Collections.ReadOnly] public int LaneStride;
+            
+            [Unity.Collections.ReadOnly] public NativeArray<float3> PartialSums;
+            [Unity.Collections.ReadOnly] public NativeArray<int> PartialCounts;
+
+            [WriteOnly] public NativeArray<float3> OutSums;
+            [WriteOnly] public NativeArray<int> OutCounts;
+
+            public void Execute(int k)
+            {
+                float3 sum = float3.zero;
+                
+                int count = 0;
+                for (int lane = 0; lane < Lanes; lane++)
+                {
+                    int index = lane * LaneStride + k;
+                    sum += PartialSums[index];
+                    count += PartialCounts[index];
+                }
+                
+                OutSums[k] = sum;
+                OutCounts[k] = count;
+            }
+        }
+        
+        [BurstCompile]
+        private struct UpdateCentroidsJob : IJobParallelFor
+        {
+            [Unity.Collections.ReadOnly] public NativeArray<float3> Sums;
+            [Unity.Collections.ReadOnly] public NativeArray<int> Counts;
+            
+            public NativeArray<float3> Centroids;
+
+            public void Execute(int k)
+            {
+                int count = Counts[k];
+                if (count > 0)
+                {
+                    Centroids[k] = Sums[k] / math.max(1, count);
+                }
+            }
         }
 
         public void CreateNewColorPalette()
