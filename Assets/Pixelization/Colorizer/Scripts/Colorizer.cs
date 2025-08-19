@@ -39,9 +39,6 @@ namespace AngryKoala.Pixelization
         [SerializeField] [ShowIf("_useValueRamp")]
         private AnimationCurve _valueRampCurve;
 
-        private List<Color> _colorGroupsColors = new();
-        private List<Color> _sortedColorPaletteColors = new();
-
         private NativeArray<Color> _sourceNativeArray;
         private NativeArray<Color> _blockColorsNativeArray;
 
@@ -97,6 +94,103 @@ namespace AngryKoala.Pixelization
             Debug.Log($"SetPixColors took {stopwatch.ElapsedMilliseconds} ms");
 #endif
         }
+        
+         private void EnsureBuffers(int sourceWidth, int sourceHeight, int blockWidth, int blockHeight)
+        {
+            bool sourceChanged = (sourceWidth != _cachedSourceWidth) || (sourceHeight != _cachedSourceHeight);
+            bool blockChanged = (blockWidth != _cachedBlockWidth) || (blockHeight != _cachedBlockHeight);
+
+            if (sourceChanged || !_sourceNativeArray.IsCreated)
+            {
+                if (_sourceNativeArray.IsCreated)
+                {
+                    _sourceNativeArray.Dispose();
+                }
+
+                if (sourceWidth > 0 && sourceHeight > 0)
+                {
+                    _sourceNativeArray = new NativeArray<Color>(sourceWidth * sourceHeight, Allocator.Persistent,
+                        NativeArrayOptions.UninitializedMemory);
+                }
+            }
+
+            if (blockChanged || !_blockColorsNativeArray.IsCreated)
+            {
+                if (_blockColorsNativeArray.IsCreated)
+                {
+                    _blockColorsNativeArray.Dispose();
+                }
+
+                if (blockWidth > 0 && blockHeight > 0)
+                {
+                    _blockColorsNativeArray = new NativeArray<Color>(blockWidth * blockHeight, Allocator.Persistent,
+                        NativeArrayOptions.UninitializedMemory);
+                }
+            }
+
+            _cachedSourceWidth = sourceWidth;
+            _cachedSourceHeight = sourceHeight;
+            _cachedBlockWidth = blockWidth;
+            _cachedBlockHeight = blockHeight;
+        }
+
+        [BurstCompile(FloatMode = FloatMode.Fast, CompileSynchronously = true)]
+        private struct AverageColorJob : IJobParallelFor
+        {
+            [Unity.Collections.ReadOnly] public NativeArray<Color> SourcePixels;
+
+            [NativeDisableParallelForRestriction] public NativeArray<Color> BlockColors;
+
+            public int SourceWidth;
+            public int SourceHeight;
+            public int BlockWidth;
+            public int BlockHeight;
+
+            public void Execute(int index)
+            {
+                int blockX = index % BlockWidth;
+                int blockY = index / BlockWidth;
+
+                int startX = Mathf.FloorToInt(blockX * (float)SourceWidth / BlockWidth);
+                int startY = Mathf.FloorToInt(blockY * (float)SourceHeight / BlockHeight);
+                int sizeX = Mathf.FloorToInt((float)SourceWidth / BlockWidth);
+                int sizeY = Mathf.FloorToInt((float)SourceHeight / BlockHeight);
+
+                float r = 0f, g = 0f, b = 0f;
+                int count = 0;
+
+                for (int y = 0; y < sizeY; y++)
+                {
+                    int rowStart = (startY + y) * SourceWidth + startX;
+
+                    for (int x = 0; x < sizeX; x++)
+                    {
+                        Color c = SourcePixels[rowStart + x];
+                        r += c.r;
+                        g += c.g;
+                        b += c.b;
+                        count++;
+                    }
+                }
+
+                BlockColors[index] = new Color(r / count, g / count, b / count);
+            }
+        }
+
+        private void DisposeBuffers()
+        {
+            if (_sourceNativeArray.IsCreated)
+            {
+                _sourceNativeArray.Dispose();
+            }
+
+            if (_blockColorsNativeArray.IsCreated)
+            {
+                _blockColorsNativeArray.Dispose();
+            }
+        }
+
+        #region Colorization
 
         public void Colorize()
         {
@@ -199,7 +293,7 @@ namespace AngryKoala.Pixelization
             _pixelizer.Texturizer.Texturize();
             _pixelizer.Texturizer.SetVisualTexture();
         }
-
+        
         /// <summary>
         /// Finds the color from a provided list that is most similar to the specified target color,
         /// using <see cref="GetColorDifference(Color, Color)"/> as the similarity metric.
@@ -233,134 +327,76 @@ namespace AngryKoala.Pixelization
             return closestColor;
         }
 
-        private void AdjustValueRampCurve()
+        /// <summary>
+        /// Computes a perceptual difference between two colors in HSV space, normalized to [0,1].
+        /// The difference is calculated using weighted hue, saturation, and value distances,
+        /// where weights adapt dynamically. Hue influence increases for vivid mid-bright colors and decreases for 
+        /// dark or desaturated colors, while value influence increases in darker ranges.
+        /// </summary>
+        /// <param name="color1"></param>
+        /// <param name="color2"></param>
+        /// <returns>Returns 0 for identical colors and 1 for maximally different colors given these perceptual rules.</returns>
+        private float GetColorDifference(Color color1, Color color2)
         {
-            var keys = new Keyframe[_stepCount + 1];
+            Color.RGBToHSV(color1, out float color1Hue, out float color1Saturation, out float color1Value);
+            Color.RGBToHSV(color2, out float color2Hue, out float color2Saturation, out float color2Value);
 
-            for (int i = 0; i < _stepCount; i++)
-            {
-                float time = i / (float)_stepCount;
-                float value = i / (_stepCount - 1f);
-                keys[i] = new Keyframe(time, value, 0f, 0f);
-            }
+            float hueDifference = Mathf.Abs(color1Hue - color2Hue);
+            hueDifference = Mathf.Min(hueDifference, 1f - hueDifference) * 2f;
+            float saturationDifference = Mathf.Abs(color1Saturation - color2Saturation);
+            float valueDifference = Mathf.Abs(color1Value - color2Value);
 
-            keys[_stepCount] = new Keyframe(1f, 1f, 0f, 0f);
+            float minSaturation = Mathf.Min(color1Saturation, color2Saturation);
+            float minValue = Mathf.Min(color1Value, color2Value);
 
-            _valueRampCurve.keys = keys;
-            _valueRampCurve.preWrapMode = WrapMode.ClampForever;
-            _valueRampCurve.postWrapMode = WrapMode.ClampForever;
+            float darkness = Mathf.SmoothStep(0f, 1f, 1f - minValue);
 
-#if UNITY_EDITOR
-            for (int i = 0; i < _valueRampCurve.length; i++)
-            {
-                var keyframe = _valueRampCurve[i];
-                keyframe.inTangent = 0f;
-                keyframe.outTangent = 0f;
-                _valueRampCurve.MoveKey(i, keyframe);
+            float midSaturation = SmoothRamp(minSaturation, 0.15f, 0.30f);
+            float midValue = SmoothRamp(minValue, 0.15f, 0.30f);
 
-                UnityEditor.AnimationUtility.SetKeyBroken(_valueRampCurve, i, true);
-                UnityEditor.AnimationUtility.SetKeyLeftTangentMode(_valueRampCurve, i,
-                    UnityEditor.AnimationUtility.TangentMode.Constant);
-                UnityEditor.AnimationUtility.SetKeyRightTangentMode(_valueRampCurve, i,
-                    UnityEditor.AnimationUtility.TangentMode.Constant);
-            }
-#endif
+            float vividness = minSaturation * minValue;
+
+            float hueCurve = SmoothRamp(vividness, 0.35f, 0.85f);
+
+            float hueDrive = Mathf.Clamp01(0.8f * (midSaturation * midValue) + 0.4f * hueCurve);
+
+            float hueWeight = Mathf.Lerp(0f, 4.0f, hueDrive);
+            float saturationWeight = Mathf.Lerp(0.3f, 1.0f, minValue);
+            float valueWeight = Mathf.Lerp(1.0f, 0.4f, minSaturation) * Mathf.Lerp(0.4f, 1.0f, minValue);
+
+            float hueBrightnessBoost = SmoothRamp(vividness, 0.40f, 0.90f);
+            hueWeight *= (1f + 2f * hueBrightnessBoost);
+
+            hueWeight *= (1f - darkness);
+            saturationWeight *= (1f - 0.8f * darkness);
+            valueWeight = Mathf.Lerp(valueWeight, 3.0f, darkness);
+
+            float activeHueRange = hueDifference > Mathf.Epsilon ? 1f : 0f;
+            float activeSaturationRange = saturationDifference > Mathf.Epsilon ? 1f : 0f;
+            float activeValueRange = valueDifference > Mathf.Epsilon ? 1f : 0f;
+
+            float numerator = hueWeight * hueDifference + saturationWeight * saturationDifference +
+                              valueWeight * valueDifference;
+            float denominator = hueWeight * activeHueRange + saturationWeight * activeSaturationRange +
+                                valueWeight * activeValueRange;
+
+            if (denominator <= 1e-6f)
+                return 0f;
+
+            return Mathf.Clamp01(numerator / denominator);
         }
 
-        private void EnsureBuffers(int sourceWidth, int sourceHeight, int blockWidth, int blockHeight)
+        private float SmoothRamp(float value, float edge0, float edge1)
         {
-            bool sourceChanged = (sourceWidth != _cachedSourceWidth) || (sourceHeight != _cachedSourceHeight);
-            bool blockChanged = (blockWidth != _cachedBlockWidth) || (blockHeight != _cachedBlockHeight);
+            if (edge1 <= edge0)
+                return value >= edge1 ? 1f : 0f;
 
-            if (sourceChanged || !_sourceNativeArray.IsCreated)
-            {
-                if (_sourceNativeArray.IsCreated)
-                {
-                    _sourceNativeArray.Dispose();
-                }
+            float step = Mathf.Clamp01((value - edge0) / (edge1 - edge0));
 
-                if (sourceWidth > 0 && sourceHeight > 0)
-                {
-                    _sourceNativeArray = new NativeArray<Color>(sourceWidth * sourceHeight, Allocator.Persistent,
-                        NativeArrayOptions.UninitializedMemory);
-                }
-            }
-
-            if (blockChanged || !_blockColorsNativeArray.IsCreated)
-            {
-                if (_blockColorsNativeArray.IsCreated)
-                {
-                    _blockColorsNativeArray.Dispose();
-                }
-
-                if (blockWidth > 0 && blockHeight > 0)
-                {
-                    _blockColorsNativeArray = new NativeArray<Color>(blockWidth * blockHeight, Allocator.Persistent,
-                        NativeArrayOptions.UninitializedMemory);
-                }
-            }
-
-            _cachedSourceWidth = sourceWidth;
-            _cachedSourceHeight = sourceHeight;
-            _cachedBlockWidth = blockWidth;
-            _cachedBlockHeight = blockHeight;
+            return step * step * (3f - 2f * step);
         }
 
-        [BurstCompile(FloatMode = FloatMode.Fast, CompileSynchronously = true)]
-        private struct AverageColorJob : IJobParallelFor
-        {
-            [Unity.Collections.ReadOnly] public NativeArray<Color> SourcePixels;
-
-            [NativeDisableParallelForRestriction] public NativeArray<Color> BlockColors;
-
-            public int SourceWidth;
-            public int SourceHeight;
-            public int BlockWidth;
-            public int BlockHeight;
-
-            public void Execute(int index)
-            {
-                int blockX = index % BlockWidth;
-                int blockY = index / BlockWidth;
-
-                int startX = Mathf.FloorToInt(blockX * (float)SourceWidth / BlockWidth);
-                int startY = Mathf.FloorToInt(blockY * (float)SourceHeight / BlockHeight);
-                int sizeX = Mathf.FloorToInt((float)SourceWidth / BlockWidth);
-                int sizeY = Mathf.FloorToInt((float)SourceHeight / BlockHeight);
-
-                float r = 0f, g = 0f, b = 0f;
-                int count = 0;
-
-                for (int y = 0; y < sizeY; y++)
-                {
-                    int rowStart = (startY + y) * SourceWidth + startX;
-
-                    for (int x = 0; x < sizeX; x++)
-                    {
-                        Color c = SourcePixels[rowStart + x];
-                        r += c.r;
-                        g += c.g;
-                        b += c.b;
-                        count++;
-                    }
-                }
-
-                BlockColors[index] = new Color(r / count, g / count, b / count);
-            }
-        }
-
-        private void DisposeBuffers()
-        {
-            if (_sourceNativeArray.IsCreated)
-            {
-                _sourceNativeArray.Dispose();
-            }
-
-            if (_blockColorsNativeArray.IsCreated)
-            {
-                _blockColorsNativeArray.Dispose();
-            }
-        }
+        #endregion
 
         #region Color Palette
 
@@ -496,75 +532,6 @@ namespace AngryKoala.Pixelization
 #endif
         }
 
-        /// <summary>
-        /// Computes a perceptual difference between two colors in HSV space, normalized to [0,1].
-        /// The difference is calculated using weighted hue, saturation, and value distances,
-        /// where weights adapt dynamically. Hue influence increases for vivid mid-bright colors and decreases for 
-        /// dark or desaturated colors, while value influence increases in darker ranges.
-        /// </summary>
-        /// <param name="color1"></param>
-        /// <param name="color2"></param>
-        /// <returns>Returns 0 for identical colors and 1 for maximally different colors given these perceptual rules.</returns>
-        private float GetColorDifference(Color color1, Color color2)
-        {
-            Color.RGBToHSV(color1, out float color1Hue, out float color1Saturation, out float color1Value);
-            Color.RGBToHSV(color2, out float color2Hue, out float color2Saturation, out float color2Value);
-
-            float hueDifference = Mathf.Abs(color1Hue - color2Hue);
-            hueDifference = Mathf.Min(hueDifference, 1f - hueDifference) * 2f;
-            float saturationDifference = Mathf.Abs(color1Saturation - color2Saturation);
-            float valueDifference = Mathf.Abs(color1Value - color2Value);
-
-            float minSaturation = Mathf.Min(color1Saturation, color2Saturation);
-            float minValue = Mathf.Min(color1Value, color2Value);
-
-            float darkness = Mathf.SmoothStep(0f, 1f, 1f - minValue);
-
-            float midSaturation = SmoothRamp(minSaturation, 0.15f, 0.30f);
-            float midValue = SmoothRamp(minValue, 0.15f, 0.30f);
-
-            float vividness = minSaturation * minValue;
-
-            float hueCurve = SmoothRamp(vividness, 0.35f, 0.85f);
-
-            float hueDrive = Mathf.Clamp01(0.8f * (midSaturation * midValue) + 0.4f * hueCurve);
-
-            float hueWeight = Mathf.Lerp(0f, 4.0f, hueDrive);
-            float saturationWeight = Mathf.Lerp(0.3f, 1.0f, minValue);
-            float valueWeight = Mathf.Lerp(1.0f, 0.4f, minSaturation) * Mathf.Lerp(0.4f, 1.0f, minValue);
-
-            float hueBrightnessBoost = SmoothRamp(vividness, 0.40f, 0.90f);
-            hueWeight *= (1f + 2f * hueBrightnessBoost);
-
-            hueWeight *= (1f - darkness);
-            saturationWeight *= (1f - 0.8f * darkness);
-            valueWeight = Mathf.Lerp(valueWeight, 3.0f, darkness);
-
-            float activeHueRange = hueDifference > Mathf.Epsilon ? 1f : 0f;
-            float activeSaturationRange = saturationDifference > Mathf.Epsilon ? 1f : 0f;
-            float activeValueRange = valueDifference > Mathf.Epsilon ? 1f : 0f;
-
-            float numerator = hueWeight * hueDifference + saturationWeight * saturationDifference +
-                              valueWeight * valueDifference;
-            float denominator = hueWeight * activeHueRange + saturationWeight * activeSaturationRange +
-                                valueWeight * activeValueRange;
-
-            if (denominator <= 1e-6f)
-                return 0f;
-
-            return Mathf.Clamp01(numerator / denominator);
-        }
-
-        private float SmoothRamp(float value, float edge0, float edge1)
-        {
-            if (edge1 <= edge0)
-                return value >= edge1 ? 1f : 0f;
-
-            float step = Mathf.Clamp01((value - edge0) / (edge1 - edge0));
-
-            return step * step * (3f - 2f * step);
-        }
-
         #endregion
 
         #region Color Operations
@@ -625,9 +592,47 @@ namespace AngryKoala.Pixelization
             return true;
         }
 
+        #endregion
+
+        #region Validation
+
         private void OnColorPaletteColorCountChanged()
         {
             _newColorPaletteColorCount = Mathf.Max(_newColorPaletteColorCount, 1);
+        }
+        
+        private void AdjustValueRampCurve()
+        {
+            var keys = new Keyframe[_stepCount + 1];
+
+            for (int i = 0; i < _stepCount; i++)
+            {
+                float time = i / (float)_stepCount;
+                float value = i / (_stepCount - 1f);
+                keys[i] = new Keyframe(time, value, 0f, 0f);
+            }
+
+            keys[_stepCount] = new Keyframe(1f, 1f, 0f, 0f);
+
+            _valueRampCurve.keys = keys;
+            _valueRampCurve.preWrapMode = WrapMode.ClampForever;
+            _valueRampCurve.postWrapMode = WrapMode.ClampForever;
+
+#if UNITY_EDITOR
+            for (int i = 0; i < _valueRampCurve.length; i++)
+            {
+                var keyframe = _valueRampCurve[i];
+                keyframe.inTangent = 0f;
+                keyframe.outTangent = 0f;
+                _valueRampCurve.MoveKey(i, keyframe);
+
+                UnityEditor.AnimationUtility.SetKeyBroken(_valueRampCurve, i, true);
+                UnityEditor.AnimationUtility.SetKeyLeftTangentMode(_valueRampCurve, i,
+                    UnityEditor.AnimationUtility.TangentMode.Constant);
+                UnityEditor.AnimationUtility.SetKeyRightTangentMode(_valueRampCurve, i,
+                    UnityEditor.AnimationUtility.TangentMode.Constant);
+            }
+#endif
         }
 
         #endregion

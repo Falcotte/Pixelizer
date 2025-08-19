@@ -50,12 +50,15 @@ namespace AngryKoala.Pixelization
 
         public void Pixelize()
         {
-            if (_width * _height == 0)
-                return;
-
             if (_sourceTexture == null)
             {
                 Debug.LogWarning("No texture found to pixelize");
+                return;
+            }
+            
+            if (_currentWidth * _texturizer.PixSize > 16384 || _currentHeight * _texturizer.PixSize > 16384)
+            {
+                Debug.LogWarning("Texture size exceeds maximum allowed size");
                 return;
             }
 

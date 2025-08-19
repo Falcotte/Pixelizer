@@ -21,6 +21,7 @@ namespace AngryKoala.Pixelization
         public Texture2D TexturizedTexture { get; set; }
 
         [SerializeField, Min(1)] private int _pixSize;
+        public int PixSize => _pixSize;
 
         [SerializeField] private string _textureSavePath;
 
@@ -69,87 +70,6 @@ namespace AngryKoala.Pixelization
         public void SetVisualTexture()
         {
             _visual.sharedMaterial.SetTexture(MainTex, TexturizedTexture);
-        }
-
-        public void SaveTexture()
-        {
-            if (!AssetDatabase.IsValidFolder(_textureSavePath))
-            {
-                if (!CreateFolderAtSavePath(_textureSavePath))
-                    return;
-            }
-
-            if (_newTexture == null)
-            {
-                Debug.LogWarning("Pixelize a texture first");
-                return;
-            }
-
-#if BENCHMARK
-            System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
-#endif
-
-            string path = AssetDatabase.GenerateUniqueAssetPath($"{_textureSavePath}/Texture_.png");
-
-            byte[] bytes = _newTexture.EncodeToPNG();
-            File.WriteAllBytes(path, bytes);
-
-            AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
-
-            TextureImporter importer = (TextureImporter)AssetImporter.GetAtPath(path);
-
-            importer.textureType = TextureImporterType.Default;
-
-            TextureImporterSettings importerSettings = new TextureImporterSettings();
-            importer.ReadTextureSettings(importerSettings);
-
-            importerSettings.npotScale = TextureImporterNPOTScale.None;
-
-            importer.SetTextureSettings(importerSettings);
-
-            EditorUtility.SetDirty(importer);
-            importer.SaveAndReimport();
-
-#if BENCHMARK
-            stopwatch.Stop();
-            Debug.Log($"SaveTexture took {stopwatch.ElapsedMilliseconds} ms");
-#endif
-        }
-        
-        private bool CreateFolderAtSavePath(string savePath)
-        {
-            if (string.IsNullOrWhiteSpace(savePath))
-            {
-                Debug.LogError("Save path is null or empty");
-                return false;
-            }
-
-            if (!savePath.StartsWith("Assets"))
-            {
-                Debug.LogError("Path must start with 'Assets'");
-                return false;
-            }
-
-            if (!AssetDatabase.IsValidFolder(savePath))
-            {
-                string[] parts = savePath.Split('/');
-                string current = parts[0];
-
-                for (int i = 1; i < parts.Length; i++)
-                {
-                    string next = current + "/" + parts[i];
-                    if (!AssetDatabase.IsValidFolder(next))
-                    {
-                        AssetDatabase.CreateFolder(current, parts[i]);
-                    }
-
-                    current = next;
-                }
-
-                AssetDatabase.Refresh();
-            }
-
-            return true;
         }
 
         #region Texturization
@@ -293,7 +213,7 @@ namespace AngryKoala.Pixelization
             _cachedDestinationWidth = destinationWidth;
             _cachedDestinationHeight = destinationHeight;
         }
-
+        
         private void FillSourceFromPixCollection()
         {
             int totalSourcePixels = _cachedSourceWidth * _cachedSourceHeight;
@@ -372,5 +292,86 @@ namespace AngryKoala.Pixelization
         }
 
         #endregion
+        
+        public void SaveTexture()
+        {
+            if (!AssetDatabase.IsValidFolder(_textureSavePath))
+            {
+                if (!CreateFolderAtSavePath(_textureSavePath))
+                    return;
+            }
+
+            if (_newTexture == null)
+            {
+                Debug.LogWarning("Pixelize a texture first");
+                return;
+            }
+
+#if BENCHMARK
+            System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+#endif
+
+            string path = AssetDatabase.GenerateUniqueAssetPath($"{_textureSavePath}/Texture_.png");
+
+            byte[] bytes = _newTexture.EncodeToPNG();
+            File.WriteAllBytes(path, bytes);
+
+            AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
+
+            TextureImporter importer = (TextureImporter)AssetImporter.GetAtPath(path);
+
+            importer.textureType = TextureImporterType.Default;
+
+            TextureImporterSettings importerSettings = new TextureImporterSettings();
+            importer.ReadTextureSettings(importerSettings);
+
+            importerSettings.npotScale = TextureImporterNPOTScale.None;
+
+            importer.SetTextureSettings(importerSettings);
+
+            EditorUtility.SetDirty(importer);
+            importer.SaveAndReimport();
+
+#if BENCHMARK
+            stopwatch.Stop();
+            Debug.Log($"SaveTexture took {stopwatch.ElapsedMilliseconds} ms");
+#endif
+        }
+        
+        private bool CreateFolderAtSavePath(string savePath)
+        {
+            if (string.IsNullOrWhiteSpace(savePath))
+            {
+                Debug.LogError("Save path is null or empty");
+                return false;
+            }
+
+            if (!savePath.StartsWith("Assets"))
+            {
+                Debug.LogError("Path must start with 'Assets'");
+                return false;
+            }
+
+            if (!AssetDatabase.IsValidFolder(savePath))
+            {
+                string[] parts = savePath.Split('/');
+                string current = parts[0];
+
+                for (int i = 1; i < parts.Length; i++)
+                {
+                    string next = current + "/" + parts[i];
+                    if (!AssetDatabase.IsValidFolder(next))
+                    {
+                        AssetDatabase.CreateFolder(current, parts[i]);
+                    }
+
+                    current = next;
+                }
+
+                AssetDatabase.Refresh();
+            }
+
+            return true;
+        }
     }
 }
