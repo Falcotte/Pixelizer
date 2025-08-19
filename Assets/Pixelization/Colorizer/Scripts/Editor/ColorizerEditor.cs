@@ -61,7 +61,7 @@ namespace AngryKoala.Pixelization
 
             if (GUILayout.Button("Reset Colors"))
             {
-                _colorizer.ResetColors();
+                _colorizer.ResetColors(true);
             }
 
             EditorGUI.EndDisabledGroup();

@@ -20,9 +20,10 @@ namespace AngryKoala.Pixelization
 
             EditorGUI.BeginDisabledGroup(!EditorApplication.isPlaying);
             
-            if (GUILayout.Button("Texturize"))
+            if (GUILayout.Button("Save Texture"))
             {
-                _texturizer.Texturize(true);
+                _texturizer.Texturize();
+                _texturizer.SaveTexture();
             }
             
             EditorGUI.EndDisabledGroup();

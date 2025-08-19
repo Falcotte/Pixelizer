@@ -2,7 +2,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using NaughtyAttributes;
+using Unity.Burst;
+using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
+using Unity.Jobs;
+using Unity.Mathematics;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 namespace AngryKoala.Pixelization
 {
@@ -28,8 +34,6 @@ namespace AngryKoala.Pixelization
 
         [SerializeField] private ColorizationStyle _colorizationStyle;
 
-        [SerializeField] private bool _useColorGroups;
-
         [SerializeField] private bool _useValueRamp;
 
         [SerializeField] [ShowIf("_useValueRamp")] [OnValueChanged("AdjustValueRampCurve")] [Range(2, 10)]
@@ -38,44 +42,158 @@ namespace AngryKoala.Pixelization
         [SerializeField] [ShowIf("_useValueRamp")]
         private AnimationCurve _valueRampCurve;
 
-        private List<Color> _colorGroupsColors = new();
-        private List<Color> _sortedColorPaletteColors = new();
+        private NativeArray<Color> _sourceNativeArray;
+        private NativeArray<Color> _blockColorsNativeArray;
 
-        public void SetPixColors(Texture2D sourceTexture, int width, int height)
+        private int _cachedSourceWidth = -1;
+        private int _cachedSourceHeight = -1;
+        private int _cachedBlockWidth = -1;
+        private int _cachedBlockHeight = -1;
+
+        private void OnDisable() => DisposeBuffers();
+        private void OnDestroy() => DisposeBuffers();
+
+        public void SetPixColors(Texture2D sourceTexture, int blockWidth, int blockHeight)
         {
-            float textureAreaX = (float)sourceTexture.width / width;
-            float textureAreaY = (float)sourceTexture.height / height;
+#if BENCHMARK
+            System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+#endif
 
-            for (int i = 0; i < width * height; i++)
+            int sourceWidth = sourceTexture.width;
+            int sourceHeight = sourceTexture.height;
+
+            EnsureBuffers(sourceWidth, sourceHeight, blockWidth, blockHeight);
+
+            if (!_sourceNativeArray.IsCreated || !_blockColorsNativeArray.IsCreated)
             {
-                Color color = GetAverageColor(sourceTexture.GetPixels(Mathf.FloorToInt((i / height) * textureAreaX),
-                    Mathf.FloorToInt(i % height * textureAreaY), Mathf.FloorToInt(textureAreaX),
-                    Mathf.FloorToInt(textureAreaY)));
+                return;
+            }
 
+            Color[] sourcePixelsManaged = sourceTexture.GetPixels();
+            _sourceNativeArray.CopyFrom(sourcePixelsManaged);
+
+            var job = new AverageColorJob
+            {
+                SourcePixels = _sourceNativeArray,
+                BlockColors = _blockColorsNativeArray,
+                SourceWidth = sourceWidth,
+                SourceHeight = sourceHeight,
+                BlockWidth = blockWidth,
+                BlockHeight = blockHeight
+            };
+
+            JobHandle jobHandle = job.Schedule(blockWidth * blockHeight, 64);
+            jobHandle.Complete();
+
+            for (int i = 0; i < _blockColorsNativeArray.Length; i++)
+            {
+                Color color = _blockColorsNativeArray[i];
                 _pixelizer.PixCollection[i].OriginalColor = color;
                 _pixelizer.PixCollection[i].Color = color;
             }
+
+#if BENCHMARK
+            stopwatch.Stop();
+            Debug.Log($"SetPixColors took {stopwatch.ElapsedMilliseconds} ms");
+#endif
         }
 
-        private Color GetAverageColor(Color[] colors)
+        private void EnsureBuffers(int sourceWidth, int sourceHeight, int blockWidth, int blockHeight)
         {
-            float r = 0f;
-            float g = 0f;
-            float b = 0f;
+            bool sourceChanged = (sourceWidth != _cachedSourceWidth) || (sourceHeight != _cachedSourceHeight);
+            bool blockChanged = (blockWidth != _cachedBlockWidth) || (blockHeight != _cachedBlockHeight);
 
-            for (int i = 0; i < colors.Length; i++)
+            if (sourceChanged || !_sourceNativeArray.IsCreated)
             {
-                r += colors[i].r;
-                g += colors[i].g;
-                b += colors[i].b;
+                if (_sourceNativeArray.IsCreated)
+                {
+                    _sourceNativeArray.Dispose();
+                }
+
+                if (sourceWidth > 0 && sourceHeight > 0)
+                {
+                    _sourceNativeArray = new NativeArray<Color>(sourceWidth * sourceHeight, Allocator.Persistent,
+                        NativeArrayOptions.UninitializedMemory);
+                }
             }
 
-            r /= colors.Length;
-            g /= colors.Length;
-            b /= colors.Length;
+            if (blockChanged || !_blockColorsNativeArray.IsCreated)
+            {
+                if (_blockColorsNativeArray.IsCreated)
+                {
+                    _blockColorsNativeArray.Dispose();
+                }
 
-            return new Color(r, g, b);
+                if (blockWidth > 0 && blockHeight > 0)
+                {
+                    _blockColorsNativeArray = new NativeArray<Color>(blockWidth * blockHeight, Allocator.Persistent,
+                        NativeArrayOptions.UninitializedMemory);
+                }
+            }
+
+            _cachedSourceWidth = sourceWidth;
+            _cachedSourceHeight = sourceHeight;
+            _cachedBlockWidth = blockWidth;
+            _cachedBlockHeight = blockHeight;
         }
+
+        [BurstCompile(FloatMode = FloatMode.Fast, CompileSynchronously = true)]
+        private struct AverageColorJob : IJobParallelFor
+        {
+            [Unity.Collections.ReadOnly] public NativeArray<Color> SourcePixels;
+
+            [NativeDisableParallelForRestriction] public NativeArray<Color> BlockColors;
+
+            public int SourceWidth;
+            public int SourceHeight;
+            public int BlockWidth;
+            public int BlockHeight;
+
+            public void Execute(int index)
+            {
+                int blockX = index % BlockWidth;
+                int blockY = index / BlockWidth;
+
+                int startX = Mathf.FloorToInt(blockX * (float)SourceWidth / BlockWidth);
+                int startY = Mathf.FloorToInt(blockY * (float)SourceHeight / BlockHeight);
+                int sizeX = Mathf.FloorToInt((float)SourceWidth / BlockWidth);
+                int sizeY = Mathf.FloorToInt((float)SourceHeight / BlockHeight);
+
+                float r = 0f, g = 0f, b = 0f;
+                int count = 0;
+
+                for (int y = 0; y < sizeY; y++)
+                {
+                    int rowStart = (startY + y) * SourceWidth + startX;
+
+                    for (int x = 0; x < sizeX; x++)
+                    {
+                        Color c = SourcePixels[rowStart + x];
+                        r += c.r;
+                        g += c.g;
+                        b += c.b;
+                        count++;
+                    }
+                }
+
+                BlockColors[index] = new Color(r / count, g / count, b / count);
+            }
+        }
+
+        private void DisposeBuffers()
+        {
+            if (_sourceNativeArray.IsCreated)
+            {
+                _sourceNativeArray.Dispose();
+            }
+
+            if (_blockColorsNativeArray.IsCreated)
+            {
+                _blockColorsNativeArray.Dispose();
+            }
+        }
+
+        #region Colorization
 
         public void Colorize()
         {
@@ -85,16 +203,15 @@ namespace AngryKoala.Pixelization
                 return;
             }
 
+#if BENCHMARK
+            System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+#endif
+
             if (_createNewColorPaletteOnColorize)
             {
                 ColorPalette newColorPalette = ScriptableObject.CreateInstance<ColorPalette>();
 
                 _newColorPaletteColors = GetColorPalette(_newColorPaletteColorCount);
-
-                if (_useColorGroups)
-                {
-                    _colorGroupsColors = _newColorPaletteColors;
-                }
 
                 foreach (var color in _newColorPaletteColors)
                 {
@@ -107,24 +224,57 @@ namespace AngryKoala.Pixelization
             if (_colorPalette == null)
             {
                 Debug.LogWarning("Color palette is not assigned");
+
+#if BENCHMARK
+                stopwatch.Stop();
+#endif
                 return;
             }
 
             if (_colorPalette.Colors.Count == 0)
             {
                 Debug.LogWarning("No colors selected");
+
+#if BENCHMARK
+                stopwatch.Stop();
+#endif
                 return;
             }
 
-            if (_useColorGroups)
-            {
-                if (!_createNewColorPaletteOnColorize)
-                {
-                    _colorGroupsColors = GetColorPalette(_colorPalette.Colors.Count);
-                }
+            int pixCount = _pixelizer.PixCollection.Length;
 
-                MapColorPaletteColorsToColorGroupsColors();
+            NativeArray<float3> pixColors = new NativeArray<float3>(pixCount, Allocator.TempJob);
+
+            for (int i = 0; i < pixCount; i++)
+            {
+                Color pixColor = _pixelizer.PixCollection[i].Color;
+                Color.RGBToHSV(pixColor, out float hue, out float saturation, out float value);
+
+                pixColors[i] = new float3(hue, saturation, value);
             }
+
+            NativeArray<float3> colorPaletteColors =
+                new NativeArray<float3>(_colorPalette.Colors.Count, Allocator.TempJob);
+
+            for (int i = 0; i < _colorPalette.Colors.Count; i++)
+            {
+                Color color = _colorPalette.Colors[i];
+                Color.RGBToHSV(color, out float hue, out float saturation, out float value);
+
+                colorPaletteColors[i] = new float3(hue, saturation, value);
+            }
+
+            NativeArray<int> closestColorIndices = new NativeArray<int>(pixCount, Allocator.TempJob);
+
+            var getClosestColorJob = new GetClosestColorJob
+            {
+                PixColors = pixColors,
+                ColorPaletteColors = colorPaletteColors,
+                ClosestColorIndices = closestColorIndices
+            };
+
+            JobHandle jobHandle = getClosestColorJob.Schedule(pixCount, 64);
+            jobHandle.Complete();
 
             for (int i = 0; i < _pixelizer.PixCollection.Length; i++)
             {
@@ -139,158 +289,162 @@ namespace AngryKoala.Pixelization
                 {
                     case ColorizationStyle.Replace:
                     {
-                        Color closestColor;
+                        int colorIndex = closestColorIndices[i];
+                        Color closestColor = _colorPalette.Colors[colorIndex];
 
-                        if (_useColorGroups)
+                        if (_useValueRamp)
                         {
-                            closestColor = GetClosestColor(_pixelizer.PixCollection[i].Color, _colorGroupsColors);
+                            Color.RGBToHSV(closestColor, out float hue, out float saturation, out float value);
 
-                            _pixelizer.PixCollection[i].ColorIndex = _colorGroupsColors.IndexOf(closestColor);
-
-                            Color color = _sortedColorPaletteColors[_pixelizer.PixCollection[i].ColorIndex];
-
-                            if (_useValueRamp)
-                            {
-                                Color.RGBToHSV(color, out float hue, out float saturation, out float value);
-                                _pixelizer.PixCollection[i].Color = Color.HSVToRGB(hue, saturation, rampValue);
-                            }
-                            else
-                            {
-                                _pixelizer.PixCollection[i].Color = color;
-                            }
+                            closestColor = Color.HSVToRGB(hue, saturation, rampValue);
                         }
-                        else
-                        {
-                            closestColor = GetClosestColor(_pixelizer.PixCollection[i].Color,
-                                _colorPalette.Colors);
 
-                            if (_useValueRamp)
-                            {
-                                Color.RGBToHSV(closestColor, out float hue, out float saturation, out float value);
-
-                                closestColor = Color.HSVToRGB(hue, saturation, rampValue);
-                            }
-
-                            _pixelizer.PixCollection[i].Color = closestColor;
-                        }
+                        _pixelizer.PixCollection[i].Color = closestColor;
                     }
                         break;
 
                     case ColorizationStyle.ReplaceWithOriginalSaturationAndValue:
                     {
                         Color originalColor = _pixelizer.PixCollection[i].Color;
-                        Color adjustedColor;
 
-                        if (_useColorGroups)
+                        int colorIndex = closestColorIndices[i];
+                        Color adjustedColor = _colorPalette.Colors[colorIndex];
+
+                        if (_useValueRamp)
                         {
-                            adjustedColor = GetClosestColor(originalColor, _colorGroupsColors);
-                            _pixelizer.PixCollection[i].ColorIndex = _colorGroupsColors.IndexOf(adjustedColor);
-
-                            if (_useValueRamp)
-                            {
-                                Color.RGBToHSV(adjustedColor, out float hue, out float saturation, out float value);
-                                adjustedColor = Color.HSVToRGB(hue, originalColor.Saturation(), rampValue);
-                            }
-                            else
-                            {
-                                adjustedColor = _sortedColorPaletteColors[_pixelizer.PixCollection[i].ColorIndex];
-                            }
+                            _pixelizer.PixCollection[i].Color = Color.HSVToRGB(adjustedColor.Hue(),
+                                originalColor.Saturation(),
+                                rampValue);
                         }
                         else
                         {
-                            adjustedColor = GetClosestColor(originalColor, _colorPalette.Colors);
-
-                            if (_useValueRamp)
-                            {
-                                adjustedColor = Color.HSVToRGB(adjustedColor.Hue(), originalColor.Saturation(),
-                                    rampValue);
-                            }
-                            else
-                            {
-                                adjustedColor = Color.HSVToRGB(adjustedColor.Hue(), originalColor.Saturation(),
-                                    originalColor.Value());
-                            }
+                            _pixelizer.PixCollection[i].Color = Color.HSVToRGB(adjustedColor.Hue(),
+                                originalColor.Saturation(),
+                                originalColor.Value());
                         }
-
-                        _pixelizer.PixCollection[i].Color = adjustedColor;
                     }
                         break;
                 }
             }
 
+            pixColors.Dispose();
+            colorPaletteColors.Dispose();
+            closestColorIndices.Dispose();
+
+#if BENCHMARK
+            stopwatch.Stop();
+            Debug.Log($"Colorization took {stopwatch.ElapsedMilliseconds} ms");
+#endif
+
             _pixelizer.Texturizer.Texturize();
             _pixelizer.Texturizer.SetVisualTexture();
         }
 
-        /// <summary>
-        /// Finds the color from a provided list that is most similar to the specified target color,
-        /// using <see cref="GetColorDifference(Color, Color)"/> as the similarity metric.
-        /// </summary>
-        /// <param name="color">The target color to match.</param>
-        /// <param name="colorizerColors">The list of colors to search through.</param>
-        /// <returns>
-        /// The <see cref="Color"/> from <paramref name="colorizerColors"/> that has the smallest
-        /// perceptual difference to <paramref name="color"/>.
-        /// </returns>
-        private Color GetClosestColor(Color color, List<Color> colorizerColors)
+        [BurstCompile(FloatMode = FloatMode.Fast, CompileSynchronously = true)]
+        private struct GetClosestColorJob : IJobParallelFor
         {
-            float hue, saturation, value;
-            Color.RGBToHSV(color, out hue, out saturation, out value);
+            [Unity.Collections.ReadOnly] public NativeArray<float3> PixColors;
+            [Unity.Collections.ReadOnly] public NativeArray<float3> ColorPaletteColors;
 
-            float colorDifference = Mathf.Infinity;
+            [WriteOnly] public NativeArray<int> ClosestColorIndices;
 
-            Color closestColor = Color.white;
-
-            foreach (var colorizerColor in colorizerColors)
+            public void Execute(int index)
             {
-                Vector3 colorHue = new Vector3(color.r, color.g, color.b);
-                Vector3 colorizerColorHue = new Vector3(colorizerColor.r, colorizerColor.g, colorizerColor.b);
+                float3 pixColor = PixColors[index];
 
-                float difference = GetColorDifference(colorizerColor, color);
+                int closestIndex = 0;
+                float closestDifference = float.MaxValue;
 
-                if (difference < colorDifference)
+                for (int j = 0; j < ColorPaletteColors.Length; j++)
                 {
-                    closestColor = colorizerColor;
-                    colorDifference = difference;
+                    float3 colorPaletteColor = ColorPaletteColors[j];
+                    float difference = GetColorDifference(pixColor.x, pixColor.y, pixColor.z, colorPaletteColor.x,
+                        colorPaletteColor.y,
+                        colorPaletteColor.z);
+
+                    if (difference < closestDifference)
+                    {
+                        closestDifference = difference;
+                        closestIndex = j;
+                    }
                 }
+
+                ClosestColorIndices[index] = closestIndex;
             }
 
-            return closestColor;
+            /// <summary>
+            /// Computes a perceptual difference between two colors in HSV space, normalized to [0,1].
+            /// The difference is calculated using weighted hue, saturation, and value distances,
+            /// where weights adapt dynamically. Hue influence increases for vivid mid-bright colors and decreases for 
+            /// dark or desaturated colors, while value influence increases in darker ranges.
+            /// </summary>
+            /// <param name="color1Hue">Hue of the first color in [0,1] range.</param>
+            /// <param name="color1Saturation">Saturation of the first color in [0,1] range.</param>
+            /// <param name="color1Value">Value of the first color in [0,1] range.</param>
+            /// <param name="color2Hue">Hue of the second color in [0,1] range.</param>
+            /// <param name="color2Saturation">Saturation of the second color in [0,1] range.</param>
+            /// <param name="color2Value">Value of the second color in [0,1] range.</param>
+            /// <returns>Returns 0 for identical colors and 1 for maximally different colors given these perceptual rules.</returns>
+            private float GetColorDifference(float color1Hue, float color1Saturation, float color1Value,
+                float color2Hue, float color2Saturation, float color2Value)
+            {
+                float hueDifference = math.abs(color1Hue - color2Hue);
+                hueDifference = math.min(hueDifference, 1f - hueDifference) * 2f;
+                float saturationDifference = math.abs(color1Saturation - color2Saturation);
+                float valueDifference = math.abs(color1Value - color2Value);
+
+                float minSaturation = math.min(color1Saturation, color2Saturation);
+                float minValue = math.min(color1Value, color2Value);
+
+                float darkness = math.smoothstep(0f, 1f, 1f - minValue);
+
+                float midSaturation = SmoothRamp(minSaturation, 0.15f, 0.30f);
+                float midValue = SmoothRamp(minValue, 0.15f, 0.30f);
+
+                float vividness = minSaturation * minValue;
+
+                float hueCurve = SmoothRamp(vividness, 0.35f, 0.85f);
+
+                float hueDrive = math.saturate(0.8f * (midSaturation * midValue) + 0.4f * hueCurve);
+
+                float hueWeight = math.lerp(0f, 4.0f, hueDrive);
+                float saturationWeight = math.lerp(0.3f, 1.0f, minValue);
+                float valueWeight = math.lerp(1.0f, 0.4f, minSaturation) * Mathf.Lerp(0.4f, 1.0f, minValue);
+
+                float hueBrightnessBoost = SmoothRamp(vividness, 0.40f, 0.90f);
+                hueWeight *= (1f + 2f * hueBrightnessBoost);
+
+                hueWeight *= (1f - darkness);
+                saturationWeight *= (1f - 0.8f * darkness);
+                valueWeight = math.lerp(valueWeight, 3.0f, darkness);
+
+                float activeHueRange = hueDifference > 1e-6f ? 1f : 0f;
+                float activeSaturationRange = saturationDifference > 1e-6f ? 1f : 0f;
+                float activeValueRange = valueDifference > 1e-6f ? 1f : 0f;
+
+                float numerator = hueWeight * hueDifference + saturationWeight * saturationDifference +
+                                  valueWeight * valueDifference;
+                float denominator = hueWeight * activeHueRange + saturationWeight * activeSaturationRange +
+                                    valueWeight * activeValueRange;
+
+                if (denominator <= 1e-6f)
+                    return 0f;
+
+                return math.saturate(numerator / denominator);
+            }
+
+            private float SmoothRamp(float value, float edge0, float edge1)
+            {
+                if (edge1 <= edge0)
+                    return value >= edge1 ? 1f : 0f;
+
+                float step = math.saturate((value - edge0) / (edge1 - edge0));
+
+                return step * step * (3f - 2f * step);
+            }
         }
 
-        private void AdjustValueRampCurve()
-        {
-            var keys = new Keyframe[_stepCount + 1];
-
-            for (int i = 0; i < _stepCount; i++)
-            {
-                float time = i / (float)_stepCount;
-                float value = i / (_stepCount - 1f);
-                keys[i] = new Keyframe(time, value, 0f, 0f);
-            }
-
-            keys[_stepCount] = new Keyframe(1f, 1f, 0f, 0f);
-
-            _valueRampCurve.keys = keys;
-            _valueRampCurve.preWrapMode = WrapMode.ClampForever;
-            _valueRampCurve.postWrapMode = WrapMode.ClampForever;
-
-#if UNITY_EDITOR
-            for (int i = 0; i < _valueRampCurve.length; i++)
-            {
-                var keyframe = _valueRampCurve[i];
-                keyframe.inTangent = 0f;
-                keyframe.outTangent = 0f;
-                _valueRampCurve.MoveKey(i, keyframe);
-
-                UnityEditor.AnimationUtility.SetKeyBroken(_valueRampCurve, i, true);
-                UnityEditor.AnimationUtility.SetKeyLeftTangentMode(_valueRampCurve, i,
-                    UnityEditor.AnimationUtility.TangentMode.Constant);
-                UnityEditor.AnimationUtility.SetKeyRightTangentMode(_valueRampCurve, i,
-                    UnityEditor.AnimationUtility.TangentMode.Constant);
-            }
-#endif
-        }
+        #endregion
 
         #region Color Palette
 
@@ -302,62 +456,231 @@ namespace AngryKoala.Pixelization
         /// <returns>A list of <see cref="Color"/> objects representing the final palette.</returns>
         private List<Color> GetColorPalette(int colorCount)
         {
+#if BENCHMARK
+            System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+#endif
+
             int iterationCount = 10;
 
-            List<Color> pixels = new List<Color>();
-            foreach (var pix in _pixelizer.PixCollection)
+            int pixCount = _pixelizer.PixCollection.Length;
+
+            var pixColors = new NativeArray<float3>(pixCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+            
+            for (int i = 0; i < pixCount; i++)
             {
-                pixels.Add(pix.Color);
+                var color = _pixelizer.PixCollection[i].Color;
+                pixColors[i] = new float3(color.r, color.g, color.b);
             }
+            
+            var centroids = new NativeArray<float3>(colorCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
 
-            int pixelCount = pixels.Count;
-
-            Color[] centroids = new Color[colorCount];
             for (int i = 0; i < colorCount; i++)
             {
-                centroids[i] = pixels[Random.Range(0, pixelCount)];
+                var pixColor = _pixelizer.PixCollection[Random.Range(0, pixCount)].Color;
+                centroids[i] =  new float3(pixColor.r, pixColor.g, pixColor.b);
             }
+            
+            var assignments = new NativeArray<int>(pixCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
 
+            int workerCount = math.max(1, Unity.Jobs.LowLevel.Unsafe.JobsUtility.JobWorkerCount);
+            int lanes = workerCount + 1;
+            int laneStride = colorCount;
+            
+            var partialSums = new NativeArray<float3>(lanes * laneStride, Allocator.TempJob, NativeArrayOptions.ClearMemory);
+            var partialCounts = new NativeArray<int>(lanes * laneStride, Allocator.TempJob, NativeArrayOptions.ClearMemory);
+
+            var reducedSums = new NativeArray<float3>(colorCount, Allocator.TempJob, NativeArrayOptions.ClearMemory);
+            var reducedCounts = new NativeArray<int>(colorCount, Allocator.TempJob, NativeArrayOptions.ClearMemory);
+            
             for (int i = 0; i < iterationCount; i++)
             {
-                int[] nearestCentroidIndices = new int[pixelCount];
-
-                for (int j = 0; j < pixelCount; j++)
+                var assignJob = new AssignNearestCentroidJob
                 {
-                    float nearestDistance = float.MaxValue;
-                    int nearestCentroidIndex = 0;
-                    for (int k = 0; k < colorCount; k++)
+                    PixColors = pixColors,
+                    Centroids = centroids,
+                    Assignments = assignments
+                };
+                
+                JobHandle assignHandle = assignJob.Schedule(pixCount, 128);
+                
+                var clearJob = new ClearPartialsJob
+                {
+                    PartialSums = partialSums,
+                    PartialCounts = partialCounts
+                };
+                JobHandle clearHandle = clearJob.Schedule(lanes * laneStride, 128, assignHandle);
+                
+                var accumulateJob = new AccumulatePerThreadJob
+                {
+                    PixColors = pixColors,
+                    Assignments = assignments,
+                    LaneStride = laneStride,
+                    PartialSums = partialSums,
+                    PartialCounts = partialCounts
+                };
+                JobHandle accumulateHandle = accumulateJob.Schedule(pixCount, 128, clearHandle);
+                
+                var reduceJob = new ReduceCentroidsJob
+                {
+                    Lanes = lanes,
+                    LaneStride = laneStride,
+                    PartialSums = partialSums,
+                    PartialCounts = partialCounts,
+                    OutSums = reducedSums,
+                    OutCounts = reducedCounts
+                };
+                JobHandle reduceHandle = reduceJob.Schedule(colorCount, 64, accumulateHandle);
+                
+                var updateJob = new UpdateCentroidsJob
+                {
+                    Sums = reducedSums,
+                    Counts = reducedCounts,
+                    Centroids = centroids
+                };
+                JobHandle updateHandle = updateJob.Schedule(colorCount, 64, reduceHandle);
+
+                updateHandle.Complete();
+            }
+            
+            var colorPalette = new List<Color>(colorCount);
+            
+            for (int i = 0; i < colorCount; i++)
+            {
+                var color = centroids[i];
+                colorPalette.Add(new Color(color.x, color.y, color.z, 1f));
+            }
+            
+            pixColors.Dispose();
+            centroids.Dispose();
+            assignments.Dispose();
+            partialSums.Dispose();
+            partialCounts.Dispose();
+            reducedSums.Dispose();
+            reducedCounts.Dispose();
+
+#if BENCHMARK
+            stopwatch.Stop();
+            Debug.Log($"GetColorPalette took {stopwatch.ElapsedMilliseconds} ms");
+#endif
+
+            return colorPalette;
+        }
+        
+        [BurstCompile]
+        private struct AssignNearestCentroidJob : IJobParallelFor
+        {
+            [Unity.Collections.ReadOnly] public NativeArray<float3> PixColors;
+            [Unity.Collections.ReadOnly] public NativeArray<float3> Centroids;
+            
+            [WriteOnly] public NativeArray<int> Assignments;
+
+            public void Execute(int index)
+            {
+                float3 pixColor = PixColors[index];
+                
+                float bestDistance = float.MaxValue;
+                int bestIndex = 0;
+
+                // Euclidean in RGB
+                for (int i = 0; i < Centroids.Length; i++)
+                {
+                    float3 difference = pixColor - Centroids[i];
+                    
+                    float distance = math.lengthsq(difference);
+                    if (distance < bestDistance)
                     {
-                        Vector3 colorA = new Vector3(pixels[j].r, pixels[j].g, pixels[j].b);
-                        Vector3 colorB = new Vector3(centroids[k].r, centroids[k].g, centroids[k].b);
-
-                        float distance = Vector3.Distance(colorA, colorB);
-                        if (distance < nearestDistance)
-                        {
-                            nearestDistance = distance;
-                            nearestCentroidIndex = k;
-                        }
+                        bestDistance = distance;
+                        bestIndex = i;
                     }
-
-                    nearestCentroidIndices[j] = nearestCentroidIndex;
                 }
+                Assignments[index] = bestIndex;
+            }
+        }
+        
+        [BurstCompile]
+        private struct ClearPartialsJob : IJobParallelFor
+        {
+            public NativeArray<float3> PartialSums;
+            public NativeArray<int> PartialCounts;
 
-                for (int j = 0; j < colorCount; j++)
+            public void Execute(int index)
+            {
+                PartialSums[index] = float3.zero;
+                PartialCounts[index] = 0;
+            }
+        }
+        
+        [BurstCompile]
+        private struct AccumulatePerThreadJob : IJobParallelFor
+        {
+            [Unity.Collections.ReadOnly] public NativeArray<float3> PixColors;
+            [Unity.Collections.ReadOnly] public NativeArray<int> Assignments;
+
+            public int LaneStride;
+
+            [NativeDisableParallelForRestriction] public NativeArray<float3> PartialSums;
+            [NativeDisableParallelForRestriction] public NativeArray<int> PartialCounts;
+
+            [NativeSetThreadIndex] private int _threadIndex;
+
+            public void Execute(int index)
+            {
+                int assignment = Assignments[index];
+                float3 pixColor = PixColors[index];
+                
+                int lane = (_threadIndex <= 0) ? 0 : (_threadIndex - 1);
+                int baseIdx = lane * LaneStride + assignment;
+                
+                PartialSums[baseIdx] += pixColor;
+                PartialCounts[baseIdx] += 1;
+            }
+        }
+        
+        [BurstCompile]
+        private struct ReduceCentroidsJob : IJobParallelFor
+        {
+            [Unity.Collections.ReadOnly] public int Lanes;
+            [Unity.Collections.ReadOnly] public int LaneStride;
+            
+            [Unity.Collections.ReadOnly] public NativeArray<float3> PartialSums;
+            [Unity.Collections.ReadOnly] public NativeArray<int> PartialCounts;
+
+            [WriteOnly] public NativeArray<float3> OutSums;
+            [WriteOnly] public NativeArray<int> OutCounts;
+
+            public void Execute(int k)
+            {
+                float3 sum = float3.zero;
+                
+                int count = 0;
+                for (int lane = 0; lane < Lanes; lane++)
                 {
-                    var pixelsInCluster =
-                        from pixelIndex in Enumerable.Range(0, pixelCount)
-                        where nearestCentroidIndices[pixelIndex] == j
-                        select pixels[pixelIndex];
+                    int index = lane * LaneStride + k;
+                    sum += PartialSums[index];
+                    count += PartialCounts[index];
+                }
+                
+                OutSums[k] = sum;
+                OutCounts[k] = count;
+            }
+        }
+        
+        [BurstCompile]
+        private struct UpdateCentroidsJob : IJobParallelFor
+        {
+            [Unity.Collections.ReadOnly] public NativeArray<float3> Sums;
+            [Unity.Collections.ReadOnly] public NativeArray<int> Counts;
+            
+            public NativeArray<float3> Centroids;
 
-                    if (pixelsInCluster.Any())
-                    {
-                        centroids[j] = new Color(pixelsInCluster.Average(c => c.r), pixelsInCluster.Average(c => c.g),
-                            pixelsInCluster.Average(c => c.b));
-                    }
+            public void Execute(int k)
+            {
+                int count = Counts[k];
+                if (count > 0)
+                {
+                    Centroids[k] = Sums[k] / math.max(1, count);
                 }
             }
-
-            return centroids.ToList();
         }
 
         public void CreateNewColorPalette()
@@ -417,128 +740,6 @@ namespace AngryKoala.Pixelization
 #endif
         }
 
-        private void MapColorPaletteColorsToColorGroupsColors()
-        {
-            List<List<Color>> colorPermutations = GetAllColorPermutations(_colorPalette.Colors);
-
-            int closestColorPermutationIndex = 0;
-            float difference = Mathf.Infinity;
-
-            for (int i = 0; i < colorPermutations.Count; i++)
-            {
-                float currentDifference = 0f;
-
-                for (int j = 0; j < _colorPalette.Colors.Count; j++)
-                {
-                    currentDifference += GetColorDifference(_colorGroupsColors[j], colorPermutations[i][j]);
-                }
-
-                if (currentDifference < difference)
-                {
-                    difference = currentDifference;
-                    closestColorPermutationIndex = i;
-                }
-            }
-
-            _sortedColorPaletteColors = colorPermutations[closestColorPermutationIndex];
-        }
-
-        private List<List<Color>> GetAllColorPermutations(List<Color> colors)
-        {
-            List<List<Color>> colorPermutations = new List<List<Color>>();
-
-            if (colors.Count == 0)
-            {
-                colorPermutations.Add(new List<Color>());
-                return colorPermutations;
-            }
-
-            Color firstElement = colors[0];
-            List<Color> remainingList = colors.GetRange(1, colors.Count - 1);
-            List<List<Color>> subPermutations = GetAllColorPermutations(remainingList);
-
-            foreach (List<Color> permutation in subPermutations)
-            {
-                for (int i = 0; i <= permutation.Count; i++)
-                {
-                    List<Color> newPermutation = new List<Color>(permutation);
-                    newPermutation.Insert(i, firstElement);
-                    colorPermutations.Add(newPermutation);
-                }
-            }
-
-            return colorPermutations;
-        }
-
-        /// <summary>
-        /// Computes a perceptual difference between two colors in HSV space, normalized to [0,1].
-        /// The difference is calculated using weighted hue, saturation, and value distances,
-        /// where weights adapt dynamically. Hue influence increases for vivid mid-bright colors and decreases for 
-        /// dark or desaturated colors, while value influence increases in darker ranges.
-        /// </summary>
-        /// <param name="color1"></param>
-        /// <param name="color2"></param>
-        /// <returns>Returns 0 for identical colors and 1 for maximally different colors given these perceptual rules.</returns>
-        private float GetColorDifference(Color color1, Color color2)
-        {
-            Color.RGBToHSV(color1, out float color1Hue, out float color1Saturation, out float color1Value);
-            Color.RGBToHSV(color2, out float color2Hue, out float color2Saturation, out float color2Value);
-
-            float hueDifference = Mathf.Abs(color1Hue - color2Hue);
-            hueDifference = Mathf.Min(hueDifference, 1f - hueDifference) * 2f;
-            float saturationDifference = Mathf.Abs(color1Saturation - color2Saturation);
-            float valueDifference = Mathf.Abs(color1Value - color2Value);
-
-            float minSaturation = Mathf.Min(color1Saturation, color2Saturation);
-            float minValue = Mathf.Min(color1Value, color2Value);
-
-            float darkness = Mathf.SmoothStep(0f, 1f, 1f - minValue);
-
-            float midSaturation = SmoothRamp(minSaturation, 0.15f, 0.30f);
-            float midValue = SmoothRamp(minValue, 0.15f, 0.30f);
-
-            float vividness = minSaturation * minValue;
-
-            float hueCurve = SmoothRamp(vividness, 0.35f, 0.85f);
-
-            float hueDrive = Mathf.Clamp01(0.8f * (midSaturation * midValue) + 0.4f * hueCurve);
-
-            float hueWeight = Mathf.Lerp(0f, 4.0f, hueDrive);
-            float saturationWeight = Mathf.Lerp(0.3f, 1.0f, minValue);
-            float valueWeight = Mathf.Lerp(1.0f, 0.4f, minSaturation) * Mathf.Lerp(0.4f, 1.0f, minValue);
-
-            float hueBrightnessBoost = SmoothRamp(vividness, 0.40f, 0.90f);
-            hueWeight *= (1f + 2f * hueBrightnessBoost);
-
-            hueWeight *= (1f - darkness);
-            saturationWeight *= (1f - 0.8f * darkness);
-            valueWeight = Mathf.Lerp(valueWeight, 3.0f, darkness);
-
-            float activeHueRange = hueDifference > Mathf.Epsilon ? 1f : 0f;
-            float activeSaturationRange = saturationDifference > Mathf.Epsilon ? 1f : 0f;
-            float activeValueRange = valueDifference > Mathf.Epsilon ? 1f : 0f;
-
-            float numerator = hueWeight * hueDifference + saturationWeight * saturationDifference +
-                              valueWeight * valueDifference;
-            float denominator = hueWeight * activeHueRange + saturationWeight * activeSaturationRange +
-                                valueWeight * activeValueRange;
-
-            if (denominator <= 1e-6f)
-                return 0f;
-
-            return Mathf.Clamp01(numerator / denominator);
-        }
-
-        private float SmoothRamp(float value, float edge0, float edge1)
-        {
-            if (edge1 <= edge0)
-                return value >= edge1 ? 1f : 0f;
-
-            float step = Mathf.Clamp01((value - edge0) / (edge1 - edge0));
-
-            return step * step * (3f - 2f * step);
-        }
-
         #endregion
 
         #region Color Operations
@@ -577,7 +778,7 @@ namespace AngryKoala.Pixelization
             _pixelizer.Texturizer.SetVisualTexture();
         }
 
-        public bool ResetColors()
+        public bool ResetColors(bool texturize = false)
         {
             if (_pixelizer.PixCollection == null)
             {
@@ -590,15 +791,56 @@ namespace AngryKoala.Pixelization
                 pix.ResetColor();
             }
 
-            _pixelizer.Texturizer.Texturize();
-            _pixelizer.Texturizer.SetVisualTexture();
+            if (texturize)
+            {
+                _pixelizer.Texturizer.Texturize();
+                _pixelizer.Texturizer.SetVisualTexture();
+            }
 
             return true;
         }
 
+        #endregion
+
+        #region Validation
+
         private void OnColorPaletteColorCountChanged()
         {
             _newColorPaletteColorCount = Mathf.Max(_newColorPaletteColorCount, 1);
+        }
+
+        private void AdjustValueRampCurve()
+        {
+            var keys = new Keyframe[_stepCount + 1];
+
+            for (int i = 0; i < _stepCount; i++)
+            {
+                float time = i / (float)_stepCount;
+                float value = i / (_stepCount - 1f);
+                keys[i] = new Keyframe(time, value, 0f, 0f);
+            }
+
+            keys[_stepCount] = new Keyframe(1f, 1f, 0f, 0f);
+
+            _valueRampCurve.keys = keys;
+            _valueRampCurve.preWrapMode = WrapMode.ClampForever;
+            _valueRampCurve.postWrapMode = WrapMode.ClampForever;
+
+#if UNITY_EDITOR
+            for (int i = 0; i < _valueRampCurve.length; i++)
+            {
+                var keyframe = _valueRampCurve[i];
+                keyframe.inTangent = 0f;
+                keyframe.outTangent = 0f;
+                _valueRampCurve.MoveKey(i, keyframe);
+
+                UnityEditor.AnimationUtility.SetKeyBroken(_valueRampCurve, i, true);
+                UnityEditor.AnimationUtility.SetKeyLeftTangentMode(_valueRampCurve, i,
+                    UnityEditor.AnimationUtility.TangentMode.Constant);
+                UnityEditor.AnimationUtility.SetKeyRightTangentMode(_valueRampCurve, i,
+                    UnityEditor.AnimationUtility.TangentMode.Constant);
+            }
+#endif
         }
 
         #endregion
