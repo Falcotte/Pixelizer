@@ -31,8 +31,6 @@ namespace AngryKoala.Pixelization
 
         [SerializeField] private ColorizationStyle _colorizationStyle;
 
-        [SerializeField] private bool _useColorGroups;
-
         [SerializeField] private bool _useValueRamp;
 
         [SerializeField] [ShowIf("_useValueRamp")] [OnValueChanged("AdjustValueRampCurve")] [Range(2, 10)]
@@ -43,7 +41,7 @@ namespace AngryKoala.Pixelization
 
         private List<Color> _colorGroupsColors = new();
         private List<Color> _sortedColorPaletteColors = new();
-        
+
         private NativeArray<Color> _sourceNativeArray;
         private NativeArray<Color> _blockColorsNativeArray;
 
@@ -118,11 +116,6 @@ namespace AngryKoala.Pixelization
 
                 _newColorPaletteColors = GetColorPalette(_newColorPaletteColorCount);
 
-                if (_useColorGroups)
-                {
-                    _colorGroupsColors = _newColorPaletteColors;
-                }
-
                 foreach (var color in _newColorPaletteColors)
                 {
                     newColorPalette.Colors.Add(color);
@@ -144,21 +137,11 @@ namespace AngryKoala.Pixelization
             if (_colorPalette.Colors.Count == 0)
             {
                 Debug.LogWarning("No colors selected");
-                
+
 #if BENCHMARK
                 stopwatch.Stop();
 #endif
                 return;
-            }
-
-            if (_useColorGroups)
-            {
-                if (!_createNewColorPaletteOnColorize)
-                {
-                    _colorGroupsColors = GetColorPalette(_colorPalette.Colors.Count);
-                }
-
-                MapColorPaletteColorsToColorGroupsColors();
             }
 
             for (int i = 0; i < _pixelizer.PixCollection.Length; i++)
@@ -174,39 +157,14 @@ namespace AngryKoala.Pixelization
                 {
                     case ColorizationStyle.Replace:
                     {
-                        Color closestColor;
+                        Color closestColor = GetClosestColor(_pixelizer.PixCollection[i].Color,
+                            _colorPalette.Colors);
 
-                        if (_useColorGroups)
+                        if (_useValueRamp)
                         {
-                            closestColor = GetClosestColor(_pixelizer.PixCollection[i].Color, _colorGroupsColors);
+                            Color.RGBToHSV(closestColor, out float hue, out float saturation, out float value);
 
-                            _pixelizer.PixCollection[i].ColorIndex = _colorGroupsColors.IndexOf(closestColor);
-
-                            Color color = _sortedColorPaletteColors[_pixelizer.PixCollection[i].ColorIndex];
-
-                            if (_useValueRamp)
-                            {
-                                Color.RGBToHSV(color, out float hue, out float saturation, out float value);
-                                _pixelizer.PixCollection[i].Color = Color.HSVToRGB(hue, saturation, rampValue);
-                            }
-                            else
-                            {
-                                _pixelizer.PixCollection[i].Color = color;
-                            }
-                        }
-                        else
-                        {
-                            closestColor = GetClosestColor(_pixelizer.PixCollection[i].Color,
-                                _colorPalette.Colors);
-
-                            if (_useValueRamp)
-                            {
-                                Color.RGBToHSV(closestColor, out float hue, out float saturation, out float value);
-
-                                closestColor = Color.HSVToRGB(hue, saturation, rampValue);
-                            }
-
-                            _pixelizer.PixCollection[i].Color = closestColor;
+                            closestColor = Color.HSVToRGB(hue, saturation, rampValue);
                         }
                     }
                         break;
@@ -214,37 +172,17 @@ namespace AngryKoala.Pixelization
                     case ColorizationStyle.ReplaceWithOriginalSaturationAndValue:
                     {
                         Color originalColor = _pixelizer.PixCollection[i].Color;
-                        Color adjustedColor;
+                        Color adjustedColor = GetClosestColor(originalColor, _colorPalette.Colors);
 
-                        if (_useColorGroups)
+                        if (_useValueRamp)
                         {
-                            adjustedColor = GetClosestColor(originalColor, _colorGroupsColors);
-                            _pixelizer.PixCollection[i].ColorIndex = _colorGroupsColors.IndexOf(adjustedColor);
-
-                            if (_useValueRamp)
-                            {
-                                Color.RGBToHSV(adjustedColor, out float hue, out float saturation, out float value);
-                                adjustedColor = Color.HSVToRGB(hue, originalColor.Saturation(), rampValue);
-                            }
-                            else
-                            {
-                                adjustedColor = _sortedColorPaletteColors[_pixelizer.PixCollection[i].ColorIndex];
-                            }
+                            adjustedColor = Color.HSVToRGB(adjustedColor.Hue(), originalColor.Saturation(),
+                                rampValue);
                         }
                         else
                         {
-                            adjustedColor = GetClosestColor(originalColor, _colorPalette.Colors);
-
-                            if (_useValueRamp)
-                            {
-                                adjustedColor = Color.HSVToRGB(adjustedColor.Hue(), originalColor.Saturation(),
-                                    rampValue);
-                            }
-                            else
-                            {
-                                adjustedColor = Color.HSVToRGB(adjustedColor.Hue(), originalColor.Saturation(),
-                                    originalColor.Value());
-                            }
+                            adjustedColor = Color.HSVToRGB(adjustedColor.Hue(), originalColor.Saturation(),
+                                originalColor.Value());
                         }
 
                         _pixelizer.PixCollection[i].Color = adjustedColor;
@@ -283,9 +221,6 @@ namespace AngryKoala.Pixelization
 
             foreach (var colorizerColor in colorizerColors)
             {
-                Vector3 colorHue = new Vector3(color.r, color.g, color.b);
-                Vector3 colorizerColorHue = new Vector3(colorizerColor.r, colorizerColor.g, colorizerColor.b);
-
                 float difference = GetColorDifference(colorizerColor, color);
 
                 if (difference < colorDifference)
@@ -331,7 +266,7 @@ namespace AngryKoala.Pixelization
             }
 #endif
         }
-        
+
         private void EnsureBuffers(int sourceWidth, int sourceHeight, int blockWidth, int blockHeight)
         {
             bool sourceChanged = (sourceWidth != _cachedSourceWidth) || (sourceHeight != _cachedSourceHeight);
@@ -346,7 +281,8 @@ namespace AngryKoala.Pixelization
 
                 if (sourceWidth > 0 && sourceHeight > 0)
                 {
-                    _sourceNativeArray = new NativeArray<Color>(sourceWidth * sourceHeight, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+                    _sourceNativeArray = new NativeArray<Color>(sourceWidth * sourceHeight, Allocator.Persistent,
+                        NativeArrayOptions.UninitializedMemory);
                 }
             }
 
@@ -359,7 +295,8 @@ namespace AngryKoala.Pixelization
 
                 if (blockWidth > 0 && blockHeight > 0)
                 {
-                    _blockColorsNativeArray = new NativeArray<Color>(blockWidth * blockHeight, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+                    _blockColorsNativeArray = new NativeArray<Color>(blockWidth * blockHeight, Allocator.Persistent,
+                        NativeArrayOptions.UninitializedMemory);
                 }
             }
 
@@ -557,59 +494,6 @@ namespace AngryKoala.Pixelization
 
             UnityEditor.EditorGUIUtility.PingObject(colorPalette);
 #endif
-        }
-
-        private void MapColorPaletteColorsToColorGroupsColors()
-        {
-            List<List<Color>> colorPermutations = GetAllColorPermutations(_colorPalette.Colors);
-
-            int closestColorPermutationIndex = 0;
-            float difference = Mathf.Infinity;
-
-            for (int i = 0; i < colorPermutations.Count; i++)
-            {
-                float currentDifference = 0f;
-
-                for (int j = 0; j < _colorPalette.Colors.Count; j++)
-                {
-                    currentDifference += GetColorDifference(_colorGroupsColors[j], colorPermutations[i][j]);
-                }
-
-                if (currentDifference < difference)
-                {
-                    difference = currentDifference;
-                    closestColorPermutationIndex = i;
-                }
-            }
-
-            _sortedColorPaletteColors = colorPermutations[closestColorPermutationIndex];
-        }
-
-        private List<List<Color>> GetAllColorPermutations(List<Color> colors)
-        {
-            List<List<Color>> colorPermutations = new List<List<Color>>();
-
-            if (colors.Count == 0)
-            {
-                colorPermutations.Add(new List<Color>());
-                return colorPermutations;
-            }
-
-            Color firstElement = colors[0];
-            List<Color> remainingList = colors.GetRange(1, colors.Count - 1);
-            List<List<Color>> subPermutations = GetAllColorPermutations(remainingList);
-
-            foreach (List<Color> permutation in subPermutations)
-            {
-                for (int i = 0; i <= permutation.Count; i++)
-                {
-                    List<Color> newPermutation = new List<Color>(permutation);
-                    newPermutation.Insert(i, firstElement);
-                    colorPermutations.Add(newPermutation);
-                }
-            }
-
-            return colorPermutations;
         }
 
         /// <summary>

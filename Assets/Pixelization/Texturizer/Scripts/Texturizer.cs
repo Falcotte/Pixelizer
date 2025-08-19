@@ -207,7 +207,7 @@ namespace AngryKoala.Pixelization
 
             FillSourceFromPixCollection();
 
-            var buildJob = new BuildTextureJob
+            var buildTextureJob = new BuildTextureJob
             {
                 Source = _sourceNativeArray,
                 Destination = _destinationNativeArray,
@@ -217,7 +217,7 @@ namespace AngryKoala.Pixelization
                 PixSize = pixSize
             };
 
-            JobHandle jobHandle = buildJob.Schedule(sourceWidth, 64);
+            JobHandle jobHandle = buildTextureJob.Schedule(sourceWidth, 64);
             jobHandle.Complete();
 
             var rawTextureData = _newTexture.GetRawTextureData<Color32>();
