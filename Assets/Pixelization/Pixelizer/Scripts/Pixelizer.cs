@@ -50,14 +50,21 @@ namespace AngryKoala.Pixelization
 
         public void Pixelize()
         {
-            if (_width * _height == 0)
-                return;
-
             if (_sourceTexture == null)
             {
                 Debug.LogWarning("No texture found to pixelize");
                 return;
             }
+            
+            if (_width * _texturizer.PixSize > 16384 || _height * _texturizer.PixSize > 16384)
+            {
+                Debug.LogWarning("Texture size exceeds maximum allowed size");
+                return;
+            }
+
+#if BENCHMARK
+            System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+#endif
 
             CreateGrid();
 
@@ -65,19 +72,28 @@ namespace AngryKoala.Pixelization
 
             _texturizer.Texturize();
             _texturizer.SetVisualTexture();
+
+#if BENCHMARK
+            stopwatch.Stop();
+            Debug.Log($"Pixelization took {stopwatch.ElapsedMilliseconds} ms");
+#endif
         }
 
         private void CreateGrid()
         {
+#if BENCHMARK
+            System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+#endif
+
             _currentWidth = _width;
             _currentHeight = _height;
 
             _pixCollection = new Pix[_width * _height];
             int pixIndex = 0;
 
-            for (int i = 0; i < _width; i++)
+            for (int j = 0; j < _height; j++)
             {
-                for (int j = 0; j < _height; j++)
+                for (int i = 0; i < _width; i++)
                 {
                     Pix pix = new();
 
@@ -90,6 +106,11 @@ namespace AngryKoala.Pixelization
             }
 
             _texturizer.SetVisualSize(_width, _height);
+
+#if BENCHMARK
+            stopwatch.Stop();
+            Debug.Log($"CreateGrid took {stopwatch.ElapsedMilliseconds} ms");
+#endif
         }
 
         #region Validation
