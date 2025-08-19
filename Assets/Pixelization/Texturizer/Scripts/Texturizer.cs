@@ -158,7 +158,7 @@ namespace AngryKoala.Pixelization
                         NativeArrayOptions.UninitializedMemory);
                 }
             }
-            
+
             if (_newTexture == null || _newTexture.width != destinationWidth ||
                 _newTexture.height != destinationHeight || _newTexture.format != TextureFormat.RGBA32)
             {
@@ -226,7 +226,7 @@ namespace AngryKoala.Pixelization
 
                 int bytesPerPixel = UnsafeUtility.SizeOf<Color32>();
                 long destinationRowStrideBytes = (long)DestinationWidth * bytesPerPixel;
-                
+
                 int destinationRowTop = (sourceRowIndex * PixSize) * DestinationWidth;
 
                 for (int sourceColumnIndex = 0; sourceColumnIndex < SourceWidth; sourceColumnIndex++)
@@ -236,16 +236,16 @@ namespace AngryKoala.Pixelization
 
                     int destinationColumnStart = sourceColumnIndex * PixSize;
                     int runStart = destinationRowTop + destinationColumnStart;
-                    
+
                     byte* firstRowPtr = destinationBase + (long)runStart * bytesPerPixel;
-                    
+
                     UnsafeUtility.MemCpyReplicate(
                         destination: firstRowPtr,
                         source: &color,
                         size: bytesPerPixel,
                         count: PixSize
                     );
-                    
+
                     long rowBytes = (long)PixSize * bytesPerPixel;
                     for (int y = 1; y < PixSize; y++)
                     {
@@ -290,28 +290,12 @@ namespace AngryKoala.Pixelization
             byte[] bytes = _newTexture.EncodeToPNG();
             File.WriteAllBytes(path, bytes);
 
-            AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
-
-            TextureImporter importer = (TextureImporter)AssetImporter.GetAtPath(path);
-
-            importer.textureType = TextureImporterType.Default;
-
-            TextureImporterSettings importerSettings = new TextureImporterSettings();
-            importer.ReadTextureSettings(importerSettings);
-
-            importerSettings.npotScale = TextureImporterNPOTScale.None;
-
-            importer.SetTextureSettings(importerSettings);
-
-            EditorUtility.SetDirty(importer);
-            importer.SaveAndReimport();
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
 
 #if BENCHMARK
             stopwatch.Stop();
             Debug.Log($"SaveTexture took {stopwatch.ElapsedMilliseconds} ms");
 #endif
-#else
-            Debug.LogWarning("SaveTexture is editor-only.");
 #endif
         }
 
@@ -350,9 +334,6 @@ namespace AngryKoala.Pixelization
             }
 
             return true;
-#else
-            Debug.LogWarning("CreateFolderAtSavePath is editor-only.");
-            return false;
 #endif
         }
     }
