@@ -404,7 +404,6 @@ MonoBehaviour:
   _createNewColorPaletteOnColorize: 0
   _newColorPaletteColorCount: 1
   _colorizationStyle: 0
-  _useColorGroups: 0
   _useValueRamp: 0
   _stepCount: 2
   _valueRampCurve:

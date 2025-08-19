@@ -260,6 +260,8 @@ namespace AngryKoala.Pixelization
 
                             closestColor = Color.HSVToRGB(hue, saturation, rampValue);
                         }
+                        
+                        _pixelizer.PixCollection[i].Color = closestColor;
                     }
                         break;
 

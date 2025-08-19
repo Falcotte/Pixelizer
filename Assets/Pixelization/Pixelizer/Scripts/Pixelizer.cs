@@ -56,7 +56,7 @@ namespace AngryKoala.Pixelization
                 return;
             }
             
-            if (_currentWidth * _texturizer.PixSize > 16384 || _currentHeight * _texturizer.PixSize > 16384)
+            if (_width * _texturizer.PixSize > 16384 || _height * _texturizer.PixSize > 16384)
             {
                 Debug.LogWarning("Texture size exceeds maximum allowed size");
                 return;
