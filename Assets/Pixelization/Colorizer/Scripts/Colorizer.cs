@@ -358,7 +358,7 @@ namespace AngryKoala.Pixelization
                 {
                     float3 colorPaletteColor = ColorPaletteColors[j];
                     float3 colorPaletteOKColor = LinearRgbToOKLab(colorPaletteColor);
-                    
+
                     float difference = GetColorDifference(pixOKColor, colorPaletteOKColor);
 
                     if (difference < closestDifference)
@@ -377,25 +377,6 @@ namespace AngryKoala.Pixelization
             private float GetColorDifference(float3 color1, float3 color2)
             {
                 return math.lengthsq(color1 - color2);
-            }
-
-            private float3 LinearRgbToOKLab(float3 color)
-            {
-                // LMS transform
-                float l = 0.4122214708f * color.x + 0.5363325363f * color.y + 0.0514459929f * color.z;
-                float m = 0.2119034982f * color.x + 0.6806995451f * color.y + 0.1073969566f * color.z;
-                float s = 0.0883024619f * color.x + 0.2817188376f * color.y + 0.6299787005f * color.z;
-
-                // cbrt (Burst-safe)
-                float l_ = math.pow(math.max(0f, l), 1f / 3f);
-                float m_ = math.pow(math.max(0f, m), 1f / 3f);
-                float s_ = math.pow(math.max(0f, s), 1f / 3f);
-
-                float L = 0.2104542553f * l_ + 0.7936177850f * m_ - 0.0040720468f * s_;
-                float a = 1.9779984951f * l_ - 2.4285922050f * m_ + 0.4505937099f * s_;
-                float b = 0.0259040371f * l_ + 0.7827717662f * m_ - 0.8086757660f * s_;
-
-                return new float3(L, a, b);
             }
 
             private float SmoothRamp(float value, float edge0, float edge1)
@@ -435,7 +416,7 @@ namespace AngryKoala.Pixelization
             for (int i = 0; i < pixCount; i++)
             {
                 var color = _pixelizer.PixCollection[i].Color;
-                pixColors[i] = new float3(color.r, color.g, color.b);
+                pixColors[i] = LinearRgbToOKLab(new float3(color.r, color.g, color.b));
             }
 
             var centroids =
@@ -444,7 +425,7 @@ namespace AngryKoala.Pixelization
             for (int i = 0; i < colorCount; i++)
             {
                 var pixColor = _pixelizer.PixCollection[Random.Range(0, pixCount)].Color;
-                centroids[i] = new float3(pixColor.r, pixColor.g, pixColor.b);
+                centroids[i] = LinearRgbToOKLab(new float3(pixColor.r, pixColor.g, pixColor.b));
             }
 
             var assignments = new NativeArray<int>(pixCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
@@ -515,7 +496,7 @@ namespace AngryKoala.Pixelization
 
             for (int i = 0; i < colorCount; i++)
             {
-                var color = centroids[i];
+                var color = OKLabToLinearRgb(centroids[i]);
                 colorPalette.Add(new Color(color.x, color.y, color.z, 1f));
             }
 
@@ -711,6 +692,40 @@ namespace AngryKoala.Pixelization
         }
 
         #endregion
+
+        private static float3 LinearRgbToOKLab(float3 color)
+        {
+            float l = 0.4122214708f * color.x + 0.5363325363f * color.y + 0.0514459929f * color.z;
+            float m = 0.2119034982f * color.x + 0.6806995451f * color.y + 0.1073969566f * color.z;
+            float s = 0.0883024619f * color.x + 0.2817188376f * color.y + 0.6299787005f * color.z;
+
+            float l_ = math.pow(math.max(0f, l), 1f / 3f);
+            float m_ = math.pow(math.max(0f, m), 1f / 3f);
+            float s_ = math.pow(math.max(0f, s), 1f / 3f);
+
+            float L = 0.2104542553f * l_ + 0.7936177850f * m_ - 0.0040720468f * s_;
+            float a = 1.9779984951f * l_ - 2.4285922050f * m_ + 0.4505937099f * s_;
+            float b = 0.0259040371f * l_ + 0.7827717662f * m_ - 0.8086757660f * s_;
+
+            return new float3(L, a, b);
+        }
+
+        private static float3 OKLabToLinearRgb(float3 color)
+        {
+            float l_ = color.x + 0.3963377774f * color.y + 0.2158037573f * color.z;
+            float m_ = color.x - 0.1055613458f * color.y - 0.0638541728f * color.z;
+            float s_ = color.x - 0.0894841775f * color.y - 1.2914855379f * color.z;
+
+            float l = math.pow(math.max(0f, l_), 3f);
+            float m = math.pow(math.max(0f, m_), 3f);
+            float s = math.pow(math.max(0f, s_), 3f);
+
+            float r = 4.0767416621f * l - 3.3077115913f * m + 0.2309699292f * s;
+            float g = -1.2684380046f * l + 2.6097574011f * m - 0.3413193965f * s;
+            float b = -0.0041960863f * l - 0.7034186147f * m + 1.7076147010f * s;
+
+            return new float3(r, g, b);
+        }
 
         #region Color Operations
 
