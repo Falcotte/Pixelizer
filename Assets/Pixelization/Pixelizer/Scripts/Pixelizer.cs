@@ -108,7 +108,6 @@ namespace AngryKoala.Pixelization
                     Pix pix = _pixPool.Get();
 
                     pix.Pixelizer = this;
-                    pix.Position = new Vector2Int(i, j);
 
                     _pixCollection[pixIndex] = pix;
                     pixIndex++;
