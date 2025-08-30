@@ -4,19 +4,9 @@ namespace AngryKoala.Pixelization
 {
     public class Pix
     {
-        public Pixelizer Pixelizer { get; set; }
-
         public Color OriginalColor { get; set; }
 
         public Color Color { get; set; }
-
-        public void Reset()
-        {
-            Pixelizer = null;
-            
-            OriginalColor = Color.clear;
-            Color = Color.clear;
-        }
         
         public void ResetColor()
         {
