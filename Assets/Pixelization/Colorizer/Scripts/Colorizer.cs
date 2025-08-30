@@ -248,9 +248,8 @@ namespace AngryKoala.Pixelization
             for (int i = 0; i < pixCount; i++)
             {
                 Color pixColor = _pixelizer.PixCollection[i].Color;
-                Color.RGBToHSV(pixColor, out float hue, out float saturation, out float value);
 
-                pixColors[i] = new float3(hue, saturation, value);
+                pixColors[i] = new float3(pixColor.r, pixColor.g, pixColor.b);
             }
 
             NativeArray<float3> colorPaletteColors =
@@ -258,10 +257,9 @@ namespace AngryKoala.Pixelization
 
             for (int i = 0; i < _colorPalette.Colors.Count; i++)
             {
-                Color color = _colorPalette.Colors[i];
-                Color.RGBToHSV(color, out float hue, out float saturation, out float value);
+                Color colorPaletteColor = _colorPalette.Colors[i];
 
-                colorPaletteColors[i] = new float3(hue, saturation, value);
+                colorPaletteColors[i] = new float3(colorPaletteColor.r, colorPaletteColor.g, colorPaletteColor.b);
             }
 
             NativeArray<int> closestColorIndices = new NativeArray<int>(pixCount, Allocator.TempJob);
@@ -351,6 +349,7 @@ namespace AngryKoala.Pixelization
             public void Execute(int index)
             {
                 float3 pixColor = PixColors[index];
+                float3 pixOKColor = LinearRgbToOKLab(pixColor);
 
                 int closestIndex = 0;
                 float closestDifference = float.MaxValue;
@@ -358,9 +357,9 @@ namespace AngryKoala.Pixelization
                 for (int j = 0; j < ColorPaletteColors.Length; j++)
                 {
                     float3 colorPaletteColor = ColorPaletteColors[j];
-                    float difference = GetColorDifference(pixColor.x, pixColor.y, pixColor.z, colorPaletteColor.x,
-                        colorPaletteColor.y,
-                        colorPaletteColor.z);
+                    float3 colorPaletteOKColor = LinearRgbToOKLab(colorPaletteColor);
+
+                    float difference = GetColorDifference(pixOKColor, colorPaletteOKColor);
 
                     if (difference < closestDifference)
                     {
@@ -373,64 +372,11 @@ namespace AngryKoala.Pixelization
             }
 
             /// <summary>
-            /// Computes a perceptual difference between two colors in HSV space, normalized to [0,1].
-            /// The difference is calculated using weighted hue, saturation, and value distances,
-            /// where weights adapt dynamically. Hue influence increases for vivid mid-bright colors and decreases for 
-            /// dark or desaturated colors, while value influence increases in darker ranges.
+            /// OKLab-based perceptual difference
             /// </summary>
-            /// <param name="color1Hue">Hue of the first color in [0,1] range.</param>
-            /// <param name="color1Saturation">Saturation of the first color in [0,1] range.</param>
-            /// <param name="color1Value">Value of the first color in [0,1] range.</param>
-            /// <param name="color2Hue">Hue of the second color in [0,1] range.</param>
-            /// <param name="color2Saturation">Saturation of the second color in [0,1] range.</param>
-            /// <param name="color2Value">Value of the second color in [0,1] range.</param>
-            /// <returns>Returns 0 for identical colors and 1 for maximally different colors given these perceptual rules.</returns>
-            private float GetColorDifference(float color1Hue, float color1Saturation, float color1Value,
-                float color2Hue, float color2Saturation, float color2Value)
+            private float GetColorDifference(float3 color1, float3 color2)
             {
-                float hueDifference = math.abs(color1Hue - color2Hue);
-                hueDifference = math.min(hueDifference, 1f - hueDifference) * 2f;
-                float saturationDifference = math.abs(color1Saturation - color2Saturation);
-                float valueDifference = math.abs(color1Value - color2Value);
-
-                float minSaturation = math.min(color1Saturation, color2Saturation);
-                float minValue = math.min(color1Value, color2Value);
-
-                float darkness = math.smoothstep(0f, 1f, 1f - minValue);
-
-                float midSaturation = SmoothRamp(minSaturation, 0.15f, 0.30f);
-                float midValue = SmoothRamp(minValue, 0.15f, 0.30f);
-
-                float vividness = minSaturation * minValue;
-
-                float hueCurve = SmoothRamp(vividness, 0.35f, 0.85f);
-
-                float hueDrive = math.saturate(0.8f * (midSaturation * midValue) + 0.4f * hueCurve);
-
-                float hueWeight = math.lerp(0f, 4.0f, hueDrive);
-                float saturationWeight = math.lerp(0.3f, 1.0f, minValue);
-                float valueWeight = math.lerp(1.0f, 0.4f, minSaturation) * Mathf.Lerp(0.4f, 1.0f, minValue);
-
-                float hueBrightnessBoost = SmoothRamp(vividness, 0.40f, 0.90f);
-                hueWeight *= (1f + 2f * hueBrightnessBoost);
-
-                hueWeight *= (1f - darkness);
-                saturationWeight *= (1f - 0.8f * darkness);
-                valueWeight = math.lerp(valueWeight, 3.0f, darkness);
-
-                float activeHueRange = hueDifference > 1e-6f ? 1f : 0f;
-                float activeSaturationRange = saturationDifference > 1e-6f ? 1f : 0f;
-                float activeValueRange = valueDifference > 1e-6f ? 1f : 0f;
-
-                float numerator = hueWeight * hueDifference + saturationWeight * saturationDifference +
-                                  valueWeight * valueDifference;
-                float denominator = hueWeight * activeHueRange + saturationWeight * activeSaturationRange +
-                                    valueWeight * activeValueRange;
-
-                if (denominator <= 1e-6f)
-                    return 0f;
-
-                return math.saturate(numerator / denominator);
+                return math.lengthsq(color1 - color2);
             }
 
             private float SmoothRamp(float value, float edge0, float edge1)
@@ -464,34 +410,38 @@ namespace AngryKoala.Pixelization
 
             int pixCount = _pixelizer.PixCollection.Length;
 
-            var pixColors = new NativeArray<float3>(pixCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-            
+            var pixColors =
+                new NativeArray<float3>(pixCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+
             for (int i = 0; i < pixCount; i++)
             {
                 var color = _pixelizer.PixCollection[i].Color;
-                pixColors[i] = new float3(color.r, color.g, color.b);
+                pixColors[i] = LinearRgbToOKLab(new float3(color.r, color.g, color.b));
             }
-            
-            var centroids = new NativeArray<float3>(colorCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+
+            var centroids =
+                new NativeArray<float3>(colorCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
 
             for (int i = 0; i < colorCount; i++)
             {
                 var pixColor = _pixelizer.PixCollection[Random.Range(0, pixCount)].Color;
-                centroids[i] =  new float3(pixColor.r, pixColor.g, pixColor.b);
+                centroids[i] = LinearRgbToOKLab(new float3(pixColor.r, pixColor.g, pixColor.b));
             }
-            
+
             var assignments = new NativeArray<int>(pixCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
 
             int workerCount = math.max(1, Unity.Jobs.LowLevel.Unsafe.JobsUtility.JobWorkerCount);
             int lanes = workerCount + 1;
             int laneStride = colorCount;
-            
-            var partialSums = new NativeArray<float3>(lanes * laneStride, Allocator.TempJob, NativeArrayOptions.ClearMemory);
-            var partialCounts = new NativeArray<int>(lanes * laneStride, Allocator.TempJob, NativeArrayOptions.ClearMemory);
+
+            var partialSums =
+                new NativeArray<float3>(lanes * laneStride, Allocator.TempJob, NativeArrayOptions.ClearMemory);
+            var partialCounts =
+                new NativeArray<int>(lanes * laneStride, Allocator.TempJob, NativeArrayOptions.ClearMemory);
 
             var reducedSums = new NativeArray<float3>(colorCount, Allocator.TempJob, NativeArrayOptions.ClearMemory);
             var reducedCounts = new NativeArray<int>(colorCount, Allocator.TempJob, NativeArrayOptions.ClearMemory);
-            
+
             for (int i = 0; i < iterationCount; i++)
             {
                 var assignJob = new AssignNearestCentroidJob
@@ -500,16 +450,16 @@ namespace AngryKoala.Pixelization
                     Centroids = centroids,
                     Assignments = assignments
                 };
-                
+
                 JobHandle assignHandle = assignJob.Schedule(pixCount, 128);
-                
+
                 var clearJob = new ClearPartialsJob
                 {
                     PartialSums = partialSums,
                     PartialCounts = partialCounts
                 };
                 JobHandle clearHandle = clearJob.Schedule(lanes * laneStride, 128, assignHandle);
-                
+
                 var accumulateJob = new AccumulatePerThreadJob
                 {
                     PixColors = pixColors,
@@ -519,7 +469,7 @@ namespace AngryKoala.Pixelization
                     PartialCounts = partialCounts
                 };
                 JobHandle accumulateHandle = accumulateJob.Schedule(pixCount, 128, clearHandle);
-                
+
                 var reduceJob = new ReduceCentroidsJob
                 {
                     Lanes = lanes,
@@ -530,7 +480,7 @@ namespace AngryKoala.Pixelization
                     OutCounts = reducedCounts
                 };
                 JobHandle reduceHandle = reduceJob.Schedule(colorCount, 64, accumulateHandle);
-                
+
                 var updateJob = new UpdateCentroidsJob
                 {
                     Sums = reducedSums,
@@ -541,15 +491,15 @@ namespace AngryKoala.Pixelization
 
                 updateHandle.Complete();
             }
-            
+
             var colorPalette = new List<Color>(colorCount);
-            
+
             for (int i = 0; i < colorCount; i++)
             {
-                var color = centroids[i];
+                var color = OKLabToLinearRgb(centroids[i]);
                 colorPalette.Add(new Color(color.x, color.y, color.z, 1f));
             }
-            
+
             pixColors.Dispose();
             centroids.Dispose();
             assignments.Dispose();
@@ -565,19 +515,19 @@ namespace AngryKoala.Pixelization
 
             return colorPalette;
         }
-        
+
         [BurstCompile]
         private struct AssignNearestCentroidJob : IJobParallelFor
         {
             [Unity.Collections.ReadOnly] public NativeArray<float3> PixColors;
             [Unity.Collections.ReadOnly] public NativeArray<float3> Centroids;
-            
+
             [WriteOnly] public NativeArray<int> Assignments;
 
             public void Execute(int index)
             {
                 float3 pixColor = PixColors[index];
-                
+
                 float bestDistance = float.MaxValue;
                 int bestIndex = 0;
 
@@ -585,7 +535,7 @@ namespace AngryKoala.Pixelization
                 for (int i = 0; i < Centroids.Length; i++)
                 {
                     float3 difference = pixColor - Centroids[i];
-                    
+
                     float distance = math.lengthsq(difference);
                     if (distance < bestDistance)
                     {
@@ -593,10 +543,11 @@ namespace AngryKoala.Pixelization
                         bestIndex = i;
                     }
                 }
+
                 Assignments[index] = bestIndex;
             }
         }
-        
+
         [BurstCompile]
         private struct ClearPartialsJob : IJobParallelFor
         {
@@ -609,7 +560,7 @@ namespace AngryKoala.Pixelization
                 PartialCounts[index] = 0;
             }
         }
-        
+
         [BurstCompile]
         private struct AccumulatePerThreadJob : IJobParallelFor
         {
@@ -627,21 +578,21 @@ namespace AngryKoala.Pixelization
             {
                 int assignment = Assignments[index];
                 float3 pixColor = PixColors[index];
-                
+
                 int lane = (_threadIndex <= 0) ? 0 : (_threadIndex - 1);
                 int baseIdx = lane * LaneStride + assignment;
-                
+
                 PartialSums[baseIdx] += pixColor;
                 PartialCounts[baseIdx] += 1;
             }
         }
-        
+
         [BurstCompile]
         private struct ReduceCentroidsJob : IJobParallelFor
         {
             [Unity.Collections.ReadOnly] public int Lanes;
             [Unity.Collections.ReadOnly] public int LaneStride;
-            
+
             [Unity.Collections.ReadOnly] public NativeArray<float3> PartialSums;
             [Unity.Collections.ReadOnly] public NativeArray<int> PartialCounts;
 
@@ -651,7 +602,7 @@ namespace AngryKoala.Pixelization
             public void Execute(int k)
             {
                 float3 sum = float3.zero;
-                
+
                 int count = 0;
                 for (int lane = 0; lane < Lanes; lane++)
                 {
@@ -659,18 +610,18 @@ namespace AngryKoala.Pixelization
                     sum += PartialSums[index];
                     count += PartialCounts[index];
                 }
-                
+
                 OutSums[k] = sum;
                 OutCounts[k] = count;
             }
         }
-        
+
         [BurstCompile]
         private struct UpdateCentroidsJob : IJobParallelFor
         {
             [Unity.Collections.ReadOnly] public NativeArray<float3> Sums;
             [Unity.Collections.ReadOnly] public NativeArray<int> Counts;
-            
+
             public NativeArray<float3> Centroids;
 
             public void Execute(int k)
@@ -741,6 +692,40 @@ namespace AngryKoala.Pixelization
         }
 
         #endregion
+
+        private static float3 LinearRgbToOKLab(float3 color)
+        {
+            float l = 0.4122214708f * color.x + 0.5363325363f * color.y + 0.0514459929f * color.z;
+            float m = 0.2119034982f * color.x + 0.6806995451f * color.y + 0.1073969566f * color.z;
+            float s = 0.0883024619f * color.x + 0.2817188376f * color.y + 0.6299787005f * color.z;
+
+            float l_ = math.pow(math.max(0f, l), 1f / 3f);
+            float m_ = math.pow(math.max(0f, m), 1f / 3f);
+            float s_ = math.pow(math.max(0f, s), 1f / 3f);
+
+            float L = 0.2104542553f * l_ + 0.7936177850f * m_ - 0.0040720468f * s_;
+            float a = 1.9779984951f * l_ - 2.4285922050f * m_ + 0.4505937099f * s_;
+            float b = 0.0259040371f * l_ + 0.7827717662f * m_ - 0.8086757660f * s_;
+
+            return new float3(L, a, b);
+        }
+
+        private static float3 OKLabToLinearRgb(float3 color)
+        {
+            float l_ = color.x + 0.3963377774f * color.y + 0.2158037573f * color.z;
+            float m_ = color.x - 0.1055613458f * color.y - 0.0638541728f * color.z;
+            float s_ = color.x - 0.0894841775f * color.y - 1.2914855379f * color.z;
+
+            float l = math.pow(math.max(0f, l_), 3f);
+            float m = math.pow(math.max(0f, m_), 3f);
+            float s = math.pow(math.max(0f, s_), 3f);
+
+            float r = 4.0767416621f * l - 3.3077115913f * m + 0.2309699292f * s;
+            float g = -1.2684380046f * l + 2.6097574011f * m - 0.3413193965f * s;
+            float b = -0.0041960863f * l - 0.7034186147f * m + 1.7076147010f * s;
+
+            return new float3(r, g, b);
+        }
 
         #region Color Operations
 
