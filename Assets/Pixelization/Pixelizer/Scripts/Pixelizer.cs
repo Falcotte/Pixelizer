@@ -51,6 +51,12 @@ namespace AngryKoala.Pixelization
         private List<Pix> _pixCollection = new();
         public List<Pix> PixCollection => _pixCollection;
 
+        private void Awake()
+        {
+            QualitySettings.vSyncCount = 0;
+            Application.targetFrameRate = 30;
+        }
+        
         public void Pixelize()
         {
             if (_sourceTexture == null)
