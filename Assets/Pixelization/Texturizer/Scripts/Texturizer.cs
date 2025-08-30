@@ -74,7 +74,7 @@ namespace AngryKoala.Pixelization
 
         public void Texturize()
         {
-            if (_pixelizer.PixCollection == null || _pixelizer.PixCollection.Length == 0)
+            if (_pixelizer.PixCollection == null || _pixelizer.PixCollection.Count == 0)
             {
                 Debug.LogWarning("Pixelize a texture first");
                 return;
@@ -192,7 +192,7 @@ namespace AngryKoala.Pixelization
             int totalSourcePixels = _cachedSourceWidth * _cachedSourceHeight;
             var pixelCollection = _pixelizer.PixCollection;
 
-            int copyCount = Mathf.Min(totalSourcePixels, pixelCollection.Length);
+            int copyCount = Mathf.Min(totalSourcePixels, pixelCollection.Count);
 
             for (int i = 0; i < copyCount; i++)
             {
