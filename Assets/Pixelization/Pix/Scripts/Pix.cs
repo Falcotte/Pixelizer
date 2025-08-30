@@ -15,6 +15,17 @@ namespace AngryKoala.Pixelization
         // Used with colorizer color groups
         public int ColorIndex { get; set; }
 
+        public void Reset()
+        {
+            Pixelizer = null;
+            
+            Position = Vector2Int.zero;
+            
+            OriginalColor = Color.clear;
+            Color = Color.clear;
+            ColorIndex = -1;
+        }
+        
         public void ResetColor()
         {
             Color = OriginalColor;

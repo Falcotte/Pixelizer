@@ -5,6 +5,8 @@ namespace AngryKoala.Pixelization
 {
     public class Pixelizer : MonoBehaviour
     {
+        [SerializeField] private PixPool _pixPool;
+        
         [SerializeField] private Colorizer _colorizer;
         public Colorizer Colorizer => _colorizer;
 
@@ -85,6 +87,14 @@ namespace AngryKoala.Pixelization
             System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
 #endif
 
+            if(_pixCollection != null && _pixCollection.Length > 0)
+            {
+                foreach (Pix pix in _pixCollection)
+                {
+                    _pixPool.Return(pix);
+                }
+            }
+            
             _currentWidth = _width;
             _currentHeight = _height;
 
@@ -95,7 +105,7 @@ namespace AngryKoala.Pixelization
             {
                 for (int i = 0; i < _width; i++)
                 {
-                    Pix pix = new();
+                    Pix pix = _pixPool.Get();
 
                     pix.Pixelizer = this;
                     pix.Position = new Vector2Int(i, j);

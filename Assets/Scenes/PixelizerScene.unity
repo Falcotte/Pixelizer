@@ -328,6 +328,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1083858432}
   - component: {fileID: 1083858433}
+  - component: {fileID: 1083858434}
   m_Layer: 0
   m_Name: Pixelizer
   m_TagString: Untagged
@@ -362,6 +363,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a1609cd90e6dc46429974302ef6398fc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  _pixPool: {fileID: 1083858434}
   _colorizer: {fileID: 1710784507}
   _texturizer: {fileID: 1074103728}
   _sourceTexture: {fileID: 0}
@@ -370,6 +372,19 @@ MonoBehaviour:
   _width: 1
   _height: 1
   _preserveRatio: 1
+--- !u!114 &1083858434
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1083858431}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a4bf63e21d2c66c4897a0b736ece10f3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _initialSize: 65536
 --- !u!1 &1710784506
 GameObject:
   m_ObjectHideFlags: 0
