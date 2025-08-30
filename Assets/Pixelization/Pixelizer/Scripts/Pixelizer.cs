@@ -88,7 +88,7 @@ namespace AngryKoala.Pixelization
             System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
 #endif
 
-            if(_pixCollection is { Count: > 0 })
+            if(_pixCollection is { Count: > 0 } && _pixCollection.Count != _width * _height)
             {
                 foreach (Pix pix in _pixCollection)
                 {
@@ -96,27 +96,30 @@ namespace AngryKoala.Pixelization
                 }
                 
                 _pixCollection.Clear();
-            }
-
-            if (_pixCollection.Capacity < _width * _height)
-            {
-                _pixCollection.Capacity = _width * _height;
+                
+                if (_pixCollection.Capacity < _width * _height)
+                {
+                    _pixCollection.Capacity = _width * _height;
+                }
             }
             
             _currentWidth = _width;
             _currentHeight = _height;
 
-            for (int j = 0; j < _height; j++)
+            if (_pixCollection.Count != _width * _height)
             {
-                for (int i = 0; i < _width; i++)
+                for (int j = 0; j < _height; j++)
                 {
-                    Pix pix = _pixPool.Get();
+                    for (int i = 0; i < _width; i++)
+                    {
+                        Pix pix = _pixPool.Get();
 
-                    _pixCollection.Add(pix);
+                        _pixCollection.Add(pix);
+                    }
                 }
+                
+                _texturizer.SetVisualSize(_width, _height);
             }
-
-            _texturizer.SetVisualSize(_width, _height);
 
 #if BENCHMARK
             stopwatch.Stop();
