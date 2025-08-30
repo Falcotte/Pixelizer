@@ -197,7 +197,7 @@ namespace AngryKoala.Pixelization
 
         public void Colorize()
         {
-            if (_pixelizer.PixCollection == null || _pixelizer.PixCollection.Length == 0)
+            if (_pixelizer.PixCollection == null || _pixelizer.PixCollection.Count == 0)
             {
                 Debug.LogWarning("Pixelize a texture first");
                 return;
@@ -241,7 +241,7 @@ namespace AngryKoala.Pixelization
                 return;
             }
 
-            int pixCount = _pixelizer.PixCollection.Length;
+            int pixCount = _pixelizer.PixCollection.Count;
 
             NativeArray<float3> pixColors = new NativeArray<float3>(pixCount, Allocator.TempJob);
 
@@ -274,7 +274,7 @@ namespace AngryKoala.Pixelization
             JobHandle jobHandle = getClosestColorJob.Schedule(pixCount, 64);
             jobHandle.Complete();
 
-            for (int i = 0; i < _pixelizer.PixCollection.Length; i++)
+            for (int i = 0; i < _pixelizer.PixCollection.Count; i++)
             {
                 float rampValue = 0f;
 
@@ -408,7 +408,7 @@ namespace AngryKoala.Pixelization
 
             int iterationCount = 10;
 
-            int pixCount = _pixelizer.PixCollection.Length;
+            int pixCount = _pixelizer.PixCollection.Count;
 
             var pixColors =
                 new NativeArray<float3>(pixCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);

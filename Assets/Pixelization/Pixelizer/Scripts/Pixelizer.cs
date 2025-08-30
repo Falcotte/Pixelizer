@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using NaughtyAttributes;
 using UnityEngine;
 
@@ -5,6 +6,8 @@ namespace AngryKoala.Pixelization
 {
     public class Pixelizer : MonoBehaviour
     {
+        [SerializeField] private PixPool _pixPool;
+        
         [SerializeField] private Colorizer _colorizer;
         public Colorizer Colorizer => _colorizer;
 
@@ -45,9 +48,15 @@ namespace AngryKoala.Pixelization
         [OnValueChanged("PreserveRatio")]
         private bool _preserveRatio;
 
-        private Pix[] _pixCollection;
-        public Pix[] PixCollection => _pixCollection;
+        private List<Pix> _pixCollection = new();
+        public List<Pix> PixCollection => _pixCollection;
 
+        private void Awake()
+        {
+            QualitySettings.vSyncCount = 0;
+            Application.targetFrameRate = 30;
+        }
+        
         public void Pixelize()
         {
             if (_sourceTexture == null)
@@ -85,27 +94,38 @@ namespace AngryKoala.Pixelization
             System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
 #endif
 
+            if(_pixCollection is { Count: > 0 } && _pixCollection.Count != _width * _height)
+            {
+                foreach (Pix pix in _pixCollection)
+                {
+                    _pixPool.Return(pix);
+                }
+                
+                _pixCollection.Clear();
+                
+                if (_pixCollection.Capacity < _width * _height)
+                {
+                    _pixCollection.Capacity = _width * _height;
+                }
+            }
+            
             _currentWidth = _width;
             _currentHeight = _height;
 
-            _pixCollection = new Pix[_width * _height];
-            int pixIndex = 0;
-
-            for (int j = 0; j < _height; j++)
+            if (_pixCollection.Count != _width * _height)
             {
-                for (int i = 0; i < _width; i++)
+                for (int j = 0; j < _height; j++)
                 {
-                    Pix pix = new();
+                    for (int i = 0; i < _width; i++)
+                    {
+                        Pix pix = _pixPool.Get();
 
-                    pix.Pixelizer = this;
-                    pix.Position = new Vector2Int(i, j);
-
-                    _pixCollection[pixIndex] = pix;
-                    pixIndex++;
+                        _pixCollection.Add(pix);
+                    }
                 }
+                
+                _texturizer.SetVisualSize(_width, _height);
             }
-
-            _texturizer.SetVisualSize(_width, _height);
 
 #if BENCHMARK
             stopwatch.Stop();
